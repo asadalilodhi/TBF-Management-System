@@ -139,7 +139,7 @@ INSERT INTO class_subjects (class_id, subject_id) VALUES (3, 1), (3, 5);
 -- Create Users (Password is 'password123' for ALL)
 -- Hash: $2b$10$X7u... is the bcrypt hash for 'password123'
 INSERT INTO users (username, password_hash, role, campus_id) VALUES 
-('admin', '$2b$10$X7uV3g.Z.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1', 'SuperAdmin', NULL),
+('admin', '$2b$10$JtR8G3i.2RaTBXU8o7sGQeXHXdlO9hMotTz58d.sabfoS1xsOFdLO', 'SuperAdmin', NULL),
 ('north_manager', '$2b$10$X7uV3g.Z.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1', 'CampusAdmin', 1),
 ('teacher_grade5', '$2b$10$X7uV3g.Z.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1', 'Teacher', 1);
 
