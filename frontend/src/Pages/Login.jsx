@@ -8,7 +8,7 @@ const MOCK_USERS = [
   { id: 'U005', username: 'southadmin', password: 'admin123',    role: 'admin',       name: 'South Campus Admin',  campus: 'South Campus', email: 'south.admin@bridgefoundation.org' },
 ];
 
-function Login({ onLogin }) {
+function Login({ onLogin, onRegister }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [selectedCampus, setSelectedCampus] = useState('North Campus');
@@ -99,6 +99,17 @@ function Login({ onLogin }) {
             {loading ? 'Signing in...' : 'Secure Login'}
           </button>
         </form>
+
+        {/* Register link */}
+        <div className="mt-4 text-center">
+          <span className="text-sm text-gray-500">Don't have an account? </span>
+          <button
+            onClick={onRegister}
+            className="text-sm text-red-600 font-semibold hover:text-red-700 transition-colors"
+          >
+            Request Access
+          </button>
+        </div>
 
         {/* Demo credentials */}
         <div className="mt-6 p-4 bg-gray-50 rounded-lg text-xs text-gray-500">
