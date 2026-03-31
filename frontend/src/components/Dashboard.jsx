@@ -2,8 +2,8 @@ import { Users, TrendingUp, BookOpen, GraduationCap } from 'lucide-react';
 import { useCampus } from './CampusContext.jsx';
 import { useAuditLog } from './AuditLogContext.jsx';
 
-export function Dashboard({ onNavigateToStudents }) {
-  const { selectedCampus } = useCampus();
+export function Dashboard({ onNavigateToStudents, onNavigateToAttendance, onNavigateToSyllabus }) {
+  const { selectedCampus, setSelectedCampus } = useCampus();
   const { auditLogs } = useAuditLog();
 
   const campusGradeData = {
@@ -36,9 +36,27 @@ export function Dashboard({ onNavigateToStudents }) {
   const currentStats = campusGradeData[selectedCampus];
 
   const stats = [
-    { label: 'Total Students', value: currentStats.totalStudents.toString(), icon: Users, color: 'bg-red-600', clickable: true },
-    { label: "Today's Attendance", value: `${currentStats.todayAttendance}%`, icon: TrendingUp, color: 'bg-black', clickable: false },
-    { label: 'Syllabus Completion', value: `${currentStats.syllabusCompletion}%`, icon: BookOpen, color: 'bg-red-600', clickable: false },
+    {
+      label: 'Total Students',
+      value: currentStats.totalStudents.toString(),
+      icon: Users,
+      color: 'bg-red-600',
+      onClick: () => onNavigateToStudents(null), // No specific grade filter
+    },
+    {
+      label: "Today's Attendance",
+      value: `${currentStats.todayAttendance}%`,
+      icon: TrendingUp,
+      color: 'bg-black',
+      onClick: onNavigateToAttendance,
+    },
+    {
+      label: 'Syllabus Completion',
+      value: `${currentStats.syllabusCompletion}%`,
+      icon: BookOpen,
+      color: 'bg-red-600',
+      onClick: onNavigateToSyllabus,
+    },
   ];
 
   const campusData = [
@@ -56,6 +74,14 @@ export function Dashboard({ onNavigateToStudents }) {
     },
   ];
 
+  // Logic to handle campus switching automatically before navigating
+  const handleComparisonNavigate = (targetCampus, navCallback, payload = null) => {
+    if (selectedCampus !== targetCampus) {
+      setSelectedCampus(targetCampus);
+    }
+    navCallback(payload);
+  };
+
   return (
     <div className="space-y-8">
       {/* Quick Stats */}
@@ -67,13 +93,16 @@ export function Dashboard({ onNavigateToStudents }) {
             return (
               <div
                 key={stat.label}
-                className={`bg-white border-2 border-gray-200 rounded-lg p-6 shadow-sm ${stat.clickable ? 'cursor-pointer hover:border-red-600 hover:shadow-md transition-all' : ''}`}
-                onClick={stat.clickable && onNavigateToStudents ? onNavigateToStudents : undefined}
+                onClick={stat.onClick}
+                className="bg-white border-2 border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:border-red-600 hover:shadow-md transition-all group"
               >
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="text-sm text-gray-600 mb-2">{stat.label}</p>
                     <p className="text-3xl text-black">{stat.value}</p>
+                    <p className="text-xs text-red-600 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      Click to view →
+                    </p>
                   </div>
                   <div className={`${stat.color} p-3 rounded-lg`}>
                     <Icon className="size-6 text-white" />
@@ -93,7 +122,9 @@ export function Dashboard({ onNavigateToStudents }) {
             {currentStats.grades.map((grade, index) => (
               <div
                 key={grade.name}
-                className="text-center p-4 bg-gray-50 rounded-lg border-2 border-gray-200 hover:border-red-600 transition-colors"
+                // MODIFIED: Pass specific grade name to nav function
+                onClick={() => onNavigateToStudents(grade.name)}
+                className="text-center p-4 bg-gray-50 rounded-lg border-2 border-gray-200 hover:border-red-600 transition-colors cursor-pointer group"
               >
                 <div className="flex items-center justify-center mb-2">
                   <div className={`size-10 rounded-full flex items-center justify-center ${index % 2 === 0 ? 'bg-red-600' : 'bg-black'}`}>
@@ -103,6 +134,9 @@ export function Dashboard({ onNavigateToStudents }) {
                 <p className="text-sm text-gray-600 mb-1">{grade.name}</p>
                 <p className="text-2xl text-black font-semibold">{grade.students}</p>
                 <p className="text-xs text-gray-500 mt-1">students</p>
+                <p className="text-xs text-red-600 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  View {grade.name} →
+                </p>
               </div>
             ))}
           </div>
@@ -119,19 +153,31 @@ export function Dashboard({ onNavigateToStudents }) {
                 <h4 className="text-xl text-black mb-6">{campus.name}</h4>
 
                 <div className="space-y-6">
-                  {/* Students Count */}
-                  <div>
+                  {/* Students Count - Auto Switch Campus */}
+                  <div
+                    onClick={() => handleComparisonNavigate(campus.name, onNavigateToStudents)}
+                    className="cursor-pointer hover:bg-gray-50 rounded-lg p-2 -mx-2 transition-colors group"
+                  >
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm text-gray-700">Total Students</span>
-                      <span className="text-lg text-black">{campus.students}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg text-black">{campus.students}</span>
+                        <span className="text-xs text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Attendance */}
-                  <div>
+                  {/* Attendance - Auto Switch Campus */}
+                  <div
+                    onClick={() => handleComparisonNavigate(campus.name, onNavigateToAttendance)}
+                    className="cursor-pointer hover:bg-gray-50 rounded-lg p-2 -mx-2 transition-colors group"
+                  >
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm text-gray-700">Attendance Rate</span>
-                      <span className="text-lg text-black">{campus.attendance}%</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg text-black">{campus.attendance}%</span>
+                        <span className="text-xs text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
+                      </div>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3">
                       <div
@@ -139,16 +185,19 @@ export function Dashboard({ onNavigateToStudents }) {
                         style={{ width: `${campus.attendance}%` }}
                       ></div>
                     </div>
-                    {campus.attendance > campusData[1 - index].attendance && (
-                      <p className="text-xs text-green-600 mt-1">Leading by {(campus.attendance - campusData[1 - index].attendance).toFixed(1)}%</p>
-                    )}
                   </div>
 
-                  {/* Syllabus Completion */}
-                  <div>
+                  {/* Syllabus Completion - Auto Switch Campus */}
+                  <div
+                    onClick={() => handleComparisonNavigate(campus.name, onNavigateToSyllabus)}
+                    className="cursor-pointer hover:bg-gray-50 rounded-lg p-2 -mx-2 transition-colors group"
+                  >
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm text-gray-700">Syllabus Completion</span>
-                      <span className="text-lg text-black">{campus.syllabusCompletion}%</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg text-black">{campus.syllabusCompletion}%</span>
+                        <span className="text-xs text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
+                      </div>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3">
                       <div
@@ -156,9 +205,6 @@ export function Dashboard({ onNavigateToStudents }) {
                         style={{ width: `${campus.syllabusCompletion}%` }}
                       ></div>
                     </div>
-                    {campus.syllabusCompletion > campusData[1 - index].syllabusCompletion && (
-                      <p className="text-xs text-green-600 mt-1">Leading by {(campus.syllabusCompletion - campusData[1 - index].syllabusCompletion).toFixed(1)}%</p>
-                    )}
                   </div>
 
                   {/* Performance Circle */}
@@ -166,14 +212,7 @@ export function Dashboard({ onNavigateToStudents }) {
                     <div className="flex items-center justify-center">
                       <div className="relative size-32">
                         <svg className="size-32 transform -rotate-90">
-                          <circle
-                            cx="64"
-                            cy="64"
-                            r="56"
-                            stroke="#e5e7eb"
-                            strokeWidth="8"
-                            fill="none"
-                          />
+                          <circle cx="64" cy="64" r="56" stroke="#e5e7eb" strokeWidth="8" fill="none" />
                           <circle
                             cx="64"
                             cy="64"
@@ -202,7 +241,7 @@ export function Dashboard({ onNavigateToStudents }) {
         </div>
       </div>
 
-      {/* Recent Activity from Audit Logs */}
+      {/* Recent Activity */}
       <div>
         <h3 className="text-lg text-black mb-4">Recent Activity</h3>
         <div className="bg-white border-2 border-gray-200 rounded-lg p-6 shadow-sm">
