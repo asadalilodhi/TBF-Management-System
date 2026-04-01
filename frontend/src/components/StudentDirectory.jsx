@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Plus, Edit2, Trash2, X, User } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, User, ArrowRightLeft, CheckSquare, Square } from 'lucide-react';
 import { useCampus } from './CampusContext.jsx';
 import { useAuditLog } from './AuditLogContext.jsx';
 import { useUser } from './UserContext.jsx';
@@ -31,6 +31,7 @@ const initialStudents = [
 const GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5'];
 const SECTIONS = ['A', 'B', 'C'];
 const SCHOLARSHIPS = ['None', '25%', '50%', '75%', '100%'];
+const CAMPUSES = ['North Campus', 'South Campus'];
 
 const emptyForm = {
   grNumber: '', name: '', grade: 'Grade 1', section: 'A',
@@ -38,7 +39,6 @@ const emptyForm = {
   scholarship: 'None', status: 'Active', dob: '', address: '',
 };
 
-// ── Component ────────────────────────────────────────────────────────────────
 export function StudentDirectory({ initialGradeFilter }) {
   const { selectedCampus } = useCampus();
   const { addAuditLog } = useAuditLog();
@@ -47,19 +47,17 @@ export function StudentDirectory({ initialGradeFilter }) {
 
   const [students, setStudents] = useState(initialStudents);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // MODIFIED: State starts with the prop value
   const [filterGrade, setFilterGrade] = useState(initialGradeFilter || 'All');
   const [filterStatus, setFilterStatus] = useState('All');
   const [selectedStudent, setSelectedStudent] = useState(null);
+  
+  // New State for Transfer Feature
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferDestination, setTransferDestination] = useState('');
 
-  // NEW: Sync the grade filter when the prop from MainLayout changes
   useEffect(() => {
-    if (initialGradeFilter) {
-      setFilterGrade(initialGradeFilter);
-    } else {
-      setFilterGrade('All');
-    }
+    setFilterGrade(initialGradeFilter || 'All');
   }, [initialGradeFilter]);
 
   // Modals
@@ -83,6 +81,45 @@ export function StudentDirectory({ initialGradeFilter }) {
   });
 
   // ── Handlers ──────────────────────────────────────────────────────────
+  
+  // Checkbox Handlers
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filtered.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filtered.map(s => s.id));
+    }
+  };
+
+  const toggleSelect = (e, id) => {
+    e.stopPropagation(); // Prevent opening detail modal
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkTransfer = () => {
+    if (!transferDestination) {
+      toast.error("Destination Required", { description: "Please select a campus to transfer to." });
+      return;
+    }
+
+    setStudents(prev => prev.map(s => 
+      selectedIds.includes(s.id) ? { ...s, campus: transferDestination } : s
+    ));
+
+    addAuditLog({
+      action: 'Bulk Transfer',
+      user: currentUser.name,
+      details: `Transferred ${selectedIds.length} students to ${transferDestination}`,
+    });
+
+    toast.success("Transfer Complete", { description: `Successfully moved ${selectedIds.length} students.` });
+    setSelectedIds([]);
+    setShowTransferModal(false);
+    setTransferDestination('');
+  };
+
   const handleAdd = () => {
     setFormData({ ...emptyForm, campus: selectedCampus });
     setShowAddModal(true);
@@ -159,29 +196,81 @@ export function StudentDirectory({ initialGradeFilter }) {
     <>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div><h3 className="text-lg text-black">Student Records</h3><p className="text-sm text-gray-500">{filtered.length} students at {selectedCampus}</p></div>
-          <button onClick={handleAdd} className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"><Plus className="size-4" /> Add Student</button>
+          <div>
+            <h3 className="text-lg text-black">Student Records</h3>
+            <p className="text-sm text-gray-500">{filtered.length} students at {selectedCampus}</p>
+          </div>
+          <div className="flex gap-2">
+            {selectedIds.length > 0 && (
+              <button 
+                onClick={() => setShowTransferModal(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors text-sm shadow-md"
+              >
+                <ArrowRightLeft className="size-4" /> Transfer ({selectedIds.length})
+              </button>
+            )}
+            <button onClick={handleAdd} className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm shadow-md">
+              <Plus className="size-4" /> Add Student
+            </button>
+          </div>
         </div>
 
         <div className="bg-white border-2 border-gray-200 rounded-lg p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" /><input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-4 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-red-600 focus:outline-none" /></div>
-          <select value={filterGrade} onChange={(e) => setFilterGrade(e.target.value)} className="px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-red-600 focus:outline-none"><option value="All">All Grades</option>{GRADES.map(g => <option key={g} value={g}>{g}</option>)}</select>
-          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-red-600 focus:outline-none"><option value="All">All Statuses</option><option value="Active">Active</option><option value="Inactive">Inactive</option></select>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
+            <input type="text" placeholder="Search by name, GR, or guardian..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-4 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-red-600 focus:outline-none" />
+          </div>
+          <select value={filterGrade} onChange={(e) => setFilterGrade(e.target.value)} className="px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-red-600 focus:outline-none">
+            <option value="All">All Grades</option>
+            {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-red-600 focus:outline-none">
+            <option value="All">All Statuses</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
         </div>
 
         <div className="bg-white border-2 border-black rounded-lg overflow-hidden shadow-lg overflow-x-auto">
-          <table className="w-full min-w-[700px]">
+          <table className="w-full min-w-[800px]">
             <thead className="bg-black text-white">
-              <tr><th className="px-4 py-3 text-left text-xs">GR No.</th><th className="px-4 py-3 text-left text-xs">Name</th><th className="px-4 py-3 text-left text-xs">Grade/Section</th><th className="px-4 py-3 text-left text-xs">Guardian</th><th className="px-4 py-3 text-left text-xs">Status</th><th className="px-4 py-3 text-center text-xs">Actions</th></tr>
+              <tr>
+                <th className="px-4 py-3 text-left w-10">
+                  <input 
+                    type="checkbox" 
+                    className="accent-red-600"
+                    checked={filtered.length > 0 && selectedIds.length === filtered.length}
+                    onChange={toggleSelectAll}
+                  />
+                </th>
+                <th className="px-4 py-3 text-left text-xs">GR No.</th>
+                <th className="px-4 py-3 text-left text-xs">Name</th>
+                <th className="px-4 py-3 text-left text-xs">Grade/Section</th>
+                <th className="px-4 py-3 text-left text-xs">Guardian</th>
+                <th className="px-4 py-3 text-left text-xs">Status</th>
+                <th className="px-4 py-3 text-center text-xs">Actions</th>
+              </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {filtered.map((student) => (
                 <tr key={student.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => handleViewDetail(student)}>
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input 
+                      type="checkbox" 
+                      className="accent-red-600"
+                      checked={selectedIds.includes(student.id)}
+                      onChange={(e) => toggleSelect(e, student.id)}
+                    />
+                  </td>
                   <td className="px-4 py-3 text-xs font-mono">{student.grNumber}</td>
                   <td className="px-4 py-3 text-sm font-medium">{student.name}</td>
                   <td className="px-4 py-3 text-xs">{student.grade} – {student.section}</td>
                   <td className="px-4 py-3 text-xs">{student.guardianName}</td>
-                  <td className="px-4 py-3 text-xs"><span className={`px-2 py-0.5 rounded-full ${student.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{student.status}</span></td>
+                  <td className="px-4 py-3 text-xs">
+                    <span className={`px-2 py-0.5 rounded-full ${student.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {student.status}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex justify-center gap-1" onClick={e => e.stopPropagation()}>
                       <button onClick={() => handleEdit(student)} className="p-1.5 hover:bg-blue-50 rounded"><Edit2 className="size-4 text-blue-600" /></button>
@@ -190,10 +279,47 @@ export function StudentDirectory({ initialGradeFilter }) {
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan="7" className="px-4 py-10 text-center text-gray-500 italic">No students found matching your filters.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Transfer Modal */}
+      <Dialog open={showTransferModal} onOpenChange={setShowTransferModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="size-5 text-orange-500" />
+              Transfer Students
+            </DialogTitle>
+            <DialogDescription>
+              Moving {selectedIds.length} selected student(s) from <strong>{selectedCampus}</strong> to another campus.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Target Campus</label>
+            <select 
+              value={transferDestination} 
+              onChange={(e) => setTransferDestination(e.target.value)}
+              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-red-600 focus:outline-none"
+            >
+              <option value="">Select Destination Campus</option>
+              {CAMPUSES.filter(c => c !== selectedCampus).map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTransferModal(false)}>Cancel</Button>
+            <Button onClick={handleBulkTransfer} className="bg-orange-500 hover:bg-orange-600 text-white">Confirm Transfer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Modal */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
@@ -202,7 +328,7 @@ export function StudentDirectory({ initialGradeFilter }) {
           <div className="grid grid-cols-2 gap-3 py-2">
             {field('grNumber', 'GR Number *')} {field('name', 'Full Name *')}
             {field('dob', 'Date of Birth', 'date')} {field('grade', 'Grade', 'text', GRADES)}
-            {field('section', 'Section', 'text', SECTIONS)} {field('campus', 'Campus', 'text', ['North Campus', 'South Campus'])}
+            {field('section', 'Section', 'text', SECTIONS)} {field('campus', 'Campus', 'text', CAMPUSES)}
             {field('guardianName', "Guardian's Name")} {field('phone', 'Phone', 'tel')}
             {field('scholarship', 'Scholarship', 'text', SCHOLARSHIPS)} {field('status', 'Status', 'text', ['Active', 'Inactive'])}
             <div className="col-span-2">{field('address', 'Address')}</div>
@@ -218,7 +344,7 @@ export function StudentDirectory({ initialGradeFilter }) {
           <div className="grid grid-cols-2 gap-3 py-2">
             {field('grNumber', 'GR Number')} {field('name', 'Full Name')}
             {field('dob', 'Date of Birth', 'date')} {field('grade', 'Grade', 'text', GRADES)}
-            {field('section', 'Section', 'text', SECTIONS)} {field('campus', 'Campus', 'text', ['North Campus', 'South Campus'])}
+            {field('section', 'Section', 'text', SECTIONS)} {field('campus', 'Campus', 'text', CAMPUSES)}
             {field('guardianName', "Guardian's Name")} {field('phone', 'Phone', 'tel')}
             {field('scholarship', 'Scholarship', 'text', SCHOLARSHIPS)} {field('status', 'Status', 'text', ['Active', 'Inactive'])}
             <div className="col-span-2">{field('address', 'Address')}</div>
