@@ -1,59 +1,109 @@
-// frontend/src/Login.jsx
 import { useState } from 'react';
 import axios from 'axios';
 
-function Login() {
-  const [username, setUsername] = useState('');
+function Login({ onLogin }) {
+  const [email, setEmail] = useState(''); // Changed from username to email
   const [password, setPassword] = useState('');
-  const [status, setStatus] = useState(''); // To show Success/Fail messages
+  const [selectedCampus, setSelectedCampus] = useState('North Campus');
+  const [status, setStatus] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setStatus('Checking...');
+    setLoading(true);
+    setStatus('');
 
     try {
-      // Connect to the Backend Container
-      const res = await axios.post('http://localhost:5000/api/auth/login', {
-        username,
-        password
+      // 1. Send email, password, AND the selected dropdown campus to the strict backend
+      const response = await axios.post('http://localhost:5000/api/auth/login', {
+        email,
+        password,
+        campus: selectedCampus // Sent to backend for strict validation!
       });
 
-      // If successful:
-      setStatus(`Success! Welcome ${res.data.role}`);
-      console.log('Your Digital Token:', res.data.token);
+      // 2. Extract data (including the exact official DB campus name)
+      const { token, user, assignedCampus } = response.data;
       
-      // Save token (normally we'd redirect here)
-      localStorage.setItem('token', res.data.token);
+      localStorage.setItem('token', token);
 
-    } catch (err) {
-      // If failed:
-      setStatus('Login Failed: ' + (err.response?.data?.error || 'Server Error'));
+      // 3. Pass the EXACT assigned campus to App.jsx to lock the Navbar!
+      onLogin(user, assignedCampus);
+
+    } catch (error) {
+      setStatus(error.response?.data?.error || 'Server error. Is the backend running?');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div style={{ padding: '50px', maxWidth: '400px', margin: '0 auto' }}>
-      <h2>TBF Staff Portal</h2>
-      <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <input 
-          type="text" 
-          placeholder="Username" 
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          style={{ padding: '10px' }}
-        />
-        <input 
-          type="password" 
-          placeholder="Password" 
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ padding: '10px' }}
-        />
-        <button type="submit" style={{ padding: '10px', background: '#D32F2F', color: 'white', border: 'none' }}>
-          Secure Login
-        </button>
-      </form>
-      <p style={{ marginTop: '20px', fontWeight: 'bold' }}>{status}</p>
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-red-600 rounded-full mb-4">
+            <span className="text-white text-2xl font-bold">TBF</span>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">TBF Staff Portal</h1>
+          <p className="text-gray-500 text-sm mt-1">The Bridge Foundation Management System</p>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+            <input
+              type="email"
+              placeholder="admin@bridgefoundation.org"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-red-600 focus:outline-none text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <input
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-red-600 focus:outline-none text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Campus</label>
+            <select
+              value={selectedCampus}
+              onChange={(e) => setSelectedCampus(e.target.value)}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-red-600 focus:outline-none text-sm"
+            >
+              <option value="North Campus">North Campus</option>
+              <option value="South Campus">South Campus</option>
+              <option value="Central Campus">Central Campus</option>
+              <option value="East Campus">East Campus</option>
+            </select>
+          </div>
+
+          {status && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700 text-sm font-medium text-center">
+              {status}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Authenticating...' : 'Secure Login'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
