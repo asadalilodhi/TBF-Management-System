@@ -48,49 +48,62 @@ export function AuditLogs() {
     URL.revokeObjectURL(url);
   };
 
+  // Dynamic Date for Today's Activity (Format: DD-MM-YYYY)
+  const todayDate = new Date().toLocaleDateString('en-GB').replace(/\//g, '-');
+
   const statCards = [
-    { label: 'Total Logs', value: filteredLogs.length, color: 'bg-red-600' },
-    { label: "Today's Activity", value: filteredLogs.filter((l) => l.timestamp.includes('01-30')).length, color: 'bg-green-600' },
-    { label: 'Unique Users', value: users.length - 1, color: 'bg-purple-600' },
-    { label: 'Action Types', value: actions.length - 1, color: 'bg-black' },
+    { label: 'Total Logs', value: auditLogs.length, color: 'bg-red-600', id: 'total' },
+    { label: "Today's Activity", value: auditLogs.filter((l) => l.timestamp.includes(todayDate)).length, color: 'bg-green-600', id: 'today' },
   ];
+
+  const handleCardClick = (id) => {
+    setSearchTerm('');
+    setFilterAction('All');
+    setFilterUser('All');
+
+    if (id === 'today') {
+      setSearchTerm(todayDate);
+    }
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg text-black">Audit Logs</h3>
+          <h3 className="text-lg text-black font-semibold">Audit Logs</h3>
           <p className="text-sm text-gray-500 mt-1">Track all system activities and changes</p>
         </div>
         <button
           onClick={handleExportCSV}
-          className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors shadow-sm"
         >
           <Download className="size-4" />
           Export CSV
         </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* 2 Columns Stat Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {statCards.map((s) => (
-          <div key={s.label} className="bg-white border-2 border-gray-200 rounded-lg p-4">
+          <div 
+            key={s.label} 
+            onClick={() => handleCardClick(s.id)}
+            className="bg-white border-2 border-gray-200 rounded-lg p-4 cursor-pointer hover:border-red-600 transition-all active:scale-95 shadow-sm"
+          >
             <div className="flex items-center gap-3">
               <div className={`p-3 ${s.color} rounded-lg`}>
                 <FileBarChart className="size-5 text-white" />
               </div>
               <div>
-                <p className="text-xs text-gray-600">{s.label}</p>
-                <p className="text-xl text-black">{s.value}</p>
+                <p className="text-xs text-gray-600 font-medium">{s.label}</p>
+                <p className="text-xl text-black font-bold">{s.value}</p>
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
+      <div className="bg-white border-2 border-gray-200 rounded-lg p-4 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
@@ -126,29 +139,28 @@ export function AuditLogs() {
         </div>
       </div>
 
-      <p className="text-sm text-gray-600">Showing {filteredLogs.length} log entries</p>
+      <p className="text-sm text-gray-600 px-1">Showing {filteredLogs.length} log entries</p>
 
-      {/* Table */}
       <div className="bg-white border-2 border-black rounded-lg overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[700px]">
             <thead className="bg-black text-white">
               <tr>
                 {['Log ID', 'Action', 'User', 'Timestamp', 'Details'].map((h) => (
-                  <th key={h} className="px-6 py-3 text-left text-sm">{h}</th>
+                  <th key={h} className="px-6 py-3 text-left text-sm font-semibold">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y-2 divide-gray-200">
               {filteredLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-sm text-gray-700">{log.id}</td>
+                  <td className="px-6 py-4 text-sm text-gray-700 font-mono">{log.id}</td>
                   <td className="px-6 py-4">
-                    <span className={`px-2 py-1 text-xs rounded ${getActionBadge(log.action)}`}>
+                    <span className={`px-2 py-1 text-xs rounded font-medium ${getActionBadge(log.action)}`}>
                       {log.action}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-black">{log.user}</td>
+                  <td className="px-6 py-4 text-sm text-black font-medium">{log.user}</td>
                   <td className="px-6 py-4 text-sm text-gray-700">{log.timestamp}</td>
                   <td className="px-6 py-4 text-sm text-gray-600">{log.details}</td>
                 </tr>
@@ -158,9 +170,8 @@ export function AuditLogs() {
         </div>
       </div>
 
-      {/* Timeline */}
-      <div className="bg-white border-2 border-gray-200 rounded-lg p-6">
-        <h4 className="text-lg text-black mb-4">Recent Activity Timeline</h4>
+      <div className="bg-white border-2 border-gray-200 rounded-lg p-6 shadow-sm">
+        <h4 className="text-lg text-black font-semibold mb-4">Recent Activity Timeline</h4>
         <div className="space-y-4">
           {filteredLogs.slice(0, 5).map((log, index) => (
             <div key={log.id} className="flex items-start gap-4">
@@ -170,12 +181,12 @@ export function AuditLogs() {
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`px-2 py-1 text-xs rounded ${getActionBadge(log.action)}`}>
+                  <span className={`px-2 py-1 text-xs rounded font-medium ${getActionBadge(log.action)}`}>
                     {log.action}
                   </span>
                   <span className="text-xs text-gray-500">{log.timestamp}</span>
                 </div>
-                <p className="text-sm text-black mt-1">{log.user}</p>
+                <p className="text-sm text-black font-medium mt-1">{log.user}</p>
                 <p className="text-sm text-gray-600 mt-1">{log.details}</p>
               </div>
             </div>

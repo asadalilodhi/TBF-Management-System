@@ -18,7 +18,7 @@ import { AdminSettings } from './AdminSettings.jsx';
 import { SuperAdminDashboard } from './SuperAdminDashboard.jsx';
 
 const NAV_ITEMS = [
-  { id: 'dashboard',  label: 'Dashboard',            icon: LayoutDashboard, roles: ['teacher', 'admin', 'super_admin'] },
+  { id: 'dashboard',  label: 'Dashboard',             icon: LayoutDashboard, roles: ['teacher', 'admin', 'super_admin'] },
   { id: 'students',   label: 'Student Records',       icon: Users,           roles: ['admin', 'super_admin'] },
   { id: 'attendance', label: 'Attendance',            icon: ClipboardCheck,  roles: ['teacher', 'admin', 'super_admin'] },
   { id: 'exams',      label: 'Exams & Results',       icon: FileText,        roles: ['admin', 'super_admin'] },
@@ -35,6 +35,9 @@ export default function MainLayout() {
   const [activeScreen, setActiveScreen] = useState('dashboard');
   const [isCampusDropdownOpen, setIsCampusDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  // New State: Stores the grade filter passed from Dashboard shortcuts
+  const [gradeFilter, setGradeFilter] = useState(null);
 
   const visibleNav = NAV_ITEMS.filter((n) => n.roles.includes(currentUser.role));
 
@@ -43,9 +46,22 @@ export default function MainLayout() {
       ? campuses
       : campuses.filter((c) => c.name === currentUser.campus);
 
+  // Navigation Handlers
+  const handleNavigateToStudents = (grade = null) => {
+    setGradeFilter(grade); // Set to specific grade or null for "All"
+    setActiveScreen('students');
+  };
+
+  const handleNavigateToAttendance = () => {
+    setActiveScreen('attendance');
+  };
+
+  const handleNavigateToSyllabus = () => {
+    setActiveScreen('syllabus');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      {/* Mobile overlay */}
       {isMobileMenuOpen && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
@@ -53,7 +69,6 @@ export default function MainLayout() {
         />
       )}
 
-      {/* ── Sidebar ───────────────────────────────────────────────────── */}
       <aside
         style={{ backgroundColor: '#000000', color: '#ffffff' }}
         className={`w-64 flex flex-col fixed h-full z-40 transition-transform duration-300 ease-in-out ${
@@ -72,7 +87,11 @@ export default function MainLayout() {
             return (
               <button
                 key={item.id}
-                onClick={() => { setActiveScreen(item.id); setIsMobileMenuOpen(false); }}
+                onClick={() => { 
+                  if (item.id === 'students') setGradeFilter(null); // Reset filter if clicked manually
+                  setActiveScreen(item.id); 
+                  setIsMobileMenuOpen(false); 
+                }}
                 style={{
                   width: '100%',
                   display: 'flex',
@@ -103,9 +122,7 @@ export default function MainLayout() {
         </div>
       </aside>
 
-      {/* ── Main area ─────────────────────────────────────────────────── */}
       <div className="flex-1 lg:ml-64">
-        {/* Header */}
         <header className="bg-white border-b-2 border-gray-200 px-4 lg:px-8 py-4 flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <button
@@ -125,7 +142,6 @@ export default function MainLayout() {
           </div>
 
           <div className="flex items-center gap-2 lg:gap-4 flex-shrink-0">
-            {/* Campus switcher */}
             <div className="relative">
               <button
                 onClick={() => setIsCampusDropdownOpen(!isCampusDropdownOpen)}
@@ -146,9 +162,7 @@ export default function MainLayout() {
                         key={campus.name}
                         onClick={() => { setSelectedCampus(campus.name); setIsCampusDropdownOpen(false); }}
                         className={`w-full px-3 lg:px-4 py-2 lg:py-3 text-left text-xs lg:text-sm transition-colors ${
-                          selectedCampus === campus.name
-                            ? 'bg-red-600 text-white'
-                            : 'text-black hover:bg-gray-100'
+                          selectedCampus === campus.name ? 'bg-red-600 text-white' : 'text-black hover:bg-gray-100'
                         }`}
                       >
                         {campus.name}
@@ -159,15 +173,20 @@ export default function MainLayout() {
               )}
             </div>
 
-            {/* Profile Switcher */}
             <ProfileSwitcher />
           </div>
         </header>
 
-        {/* Screen content */}
         <main className="p-4 lg:p-8">
-          {activeScreen === 'dashboard'  && <Dashboard onNavigateToStudents={() => setActiveScreen('students')} />}
-          {activeScreen === 'students'   && <StudentDirectory />}
+          {activeScreen === 'dashboard'  && (
+            <Dashboard
+              onNavigateToStudents={handleNavigateToStudents}
+              onNavigateToAttendance={handleNavigateToAttendance}
+              onNavigateToSyllabus={handleNavigateToSyllabus}
+            />
+          )}
+          {/* Pass the gradeFilter prop to the StudentDirectory */}
+          {activeScreen === 'students'   && <StudentDirectory initialGradeFilter={gradeFilter} />}
           {activeScreen === 'attendance' && <DailyAttendance />}
           {activeScreen === 'exams'      && <ExamResults />}
           {activeScreen === 'staff'      && <StaffHR />}

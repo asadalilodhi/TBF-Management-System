@@ -103,6 +103,25 @@ function Login({ onLogin }) {
             {loading ? 'Authenticating...' : 'Secure Login'}
           </button>
         </form>
+
+        {/* Register link */}
+        <div className="mt-4 text-center">
+          <span className="text-sm text-gray-500">Don't have an account? </span>
+          <button
+            onClick={onRegister}
+            className="text-sm text-red-600 font-semibold hover:text-red-700 transition-colors"
+          >
+            Request Access
+          </button>
+        </div>
+
+        {/* Demo credentials */}
+        <div className="mt-6 p-4 bg-gray-50 rounded-lg text-xs text-gray-500">
+          <p className="font-semibold text-gray-600 mb-2">Demo Credentials:</p>
+          <p>Super Admin: <span className="font-mono">admin / admin123</span></p>
+          <p>Teacher: <span className="font-mono">sana / teacher123</span></p>
+          <p>Admin: <span className="font-mono">northadmin / admin123</span></p>
+        </div>
       </div>
     </div>
   );
