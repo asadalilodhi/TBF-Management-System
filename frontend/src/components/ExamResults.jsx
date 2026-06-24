@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { Save, Calculator, Plus, ArrowLeft, FileText, RotateCcw } from 'lucide-react';
 import { useCampus } from './CampusContext.jsx';
 import { useAuditLog } from './AuditLogContext.jsx';
@@ -11,64 +12,10 @@ import {
 import { Button } from './ui/button.jsx';
 import { useToast } from './ui/toast.jsx';
 
-const subjects = [
-  { name: 'Mathematics', total: 100 },
-  { name: 'English', total: 100 },
-  { name: 'Urdu', total: 100 },
-  { name: 'Science', total: 50 },
-  { name: 'Social Studies', total: 50 },
-];
-
-const mockStudentsForExam = {
-  'Grade 1': [
-    { studentId: '1', studentName: 'Ali Hassan', grNumber: 'GR009' },
-    { studentId: '2', studentName: 'Hira Qamar', grNumber: 'GR010' },
-    { studentId: '3', studentName: 'Sara Ahmed', grNumber: 'GR011' },
-  ],
-  'Grade 2': [
-    { studentId: '5', studentName: 'Fatima Noor', grNumber: 'GR004' },
-    { studentId: '6', studentName: 'Maryam Siddiqui', grNumber: 'GR008' },
-    { studentId: '7', studentName: 'Bilal Khan', grNumber: 'GR013' },
-  ],
-  'Grade 3': [
-    { studentId: '9', studentName: 'Hassan Ali', grNumber: 'GR003' },
-    { studentId: '10', studentName: 'Ibrahim Qureshi', grNumber: 'GR007' },
-    { studentId: '11', studentName: 'Zara Malik', grNumber: 'GR015' },
-  ],
-  'Grade 4': [
-    { studentId: '13', studentName: 'Ayesha Malik', grNumber: 'GR002' },
-    { studentId: '14', studentName: 'Zainab Hussain', grNumber: 'GR006' },
-    { studentId: '15', studentName: 'Umar Shahid', grNumber: 'GR017' },
-  ],
-  'Grade 5': [
-    { studentId: '17', studentName: 'Muhammad Ahmed Khan', grNumber: 'GR001' },
-    { studentId: '18', studentName: 'Usman Farooq', grNumber: 'GR005' },
-    { studentId: '19', studentName: 'Sana Iqbal', grNumber: 'GR019' },
-  ],
-};
-
-const mockSavedExams = [
-  {
-    id: 'EX001', name: 'Term 1 Midterm', class: 'Grade 3',
-    campus: 'North Campus', date: '2026-01-15',
-    results: [
-      {
-        studentId: '9', studentName: 'Hassan Ali', grNumber: 'GR003',
-        subjects: {
-          Mathematics: { obtained: 85, total: 100 },
-          English: { obtained: 78, total: 100 },
-          Urdu: { obtained: 92, total: 100 },
-          Science: { obtained: 42, total: 50 },
-          'Social Studies': { obtained: 38, total: 50 },
-        },
-      },
-    ],
-  },
-];
-
-function makeEmptySubjects() {
+// Helper functions for dynamic subjects
+function makeEmptySubjects(courseList) {
   const s = {};
-  subjects.forEach((sub) => { s[sub.name] = { obtained: null, total: sub.total }; });
+  courseList.forEach((sub) => { s[sub.name] = { obtained: null, total: sub.maxMarks }; });
   return s;
 }
 
@@ -101,70 +48,169 @@ export function ExamResults() {
   const [viewMode, setViewMode] = useState('list');
   const [selectedExam, setSelectedExam] = useState(null);
   const [isNewExam, setIsNewExam] = useState(false);
-  const [selectedClass, setSelectedClass] = useState('Grade 1');
+  const [selectedClass, setSelectedClass] = useState('');
   const [examName, setExamName] = useState('');
+  
+  const [currentSubjects, setCurrentSubjects] = useState([]);
   const [studentResults, setStudentResults] = useState([]);
-  const [savedExams, setSavedExams] = useState(mockSavedExams);
+  const [savedExams, setSavedExams] = useState([]); 
   const [lastSavedResults, setLastSavedResults] = useState([]);
   const [selectedStudents, setSelectedStudents] = useState(new Set());
+  
   const [showReportCard, setShowReportCard] = useState(false);
   const [reportCardIndex, setReportCardIndex] = useState(0);
   const [showNewExamDialog, setShowNewExamDialog] = useState(false);
   const [newExamName, setNewExamName] = useState('');
-  const [newExamClass, setNewExamClass] = useState('Grade 1');
+  const [newExamClass, setNewExamClass] = useState('');
+  
+  // NEW: Dynamic state for the class dropdown
+  const [availableClasses, setAvailableClasses] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const hasUnsavedChanges =
-    JSON.stringify(studentResults) !== JSON.stringify(lastSavedResults);
+  const hasUnsavedChanges = JSON.stringify(studentResults) !== JSON.stringify(lastSavedResults);
 
-  const initResults = (className, savedResults) => {
-    if (savedResults) {
-      setStudentResults(JSON.parse(JSON.stringify(savedResults)));
-      setLastSavedResults(JSON.parse(JSON.stringify(savedResults)));
+  // ── 1. INITIAL DATA FETCH (Exams & Classes) ──────────────────────────────
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const token = localStorage.getItem('token');
+        
+        // Fetch Exams
+        const examsRes = await axios.get('http://localhost:5000/api/exams', {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { campus: selectedCampus }
+        }).catch(() => ({ data: [] }));
+
+        // Fetch Classes for the specific campus
+        const classesRes = await axios.get('http://localhost:5000/api/classes', {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => ({ data: [] }));
+
+        const liveExams = Array.isArray(examsRes.data) ? examsRes.data : [];
+        setSavedExams(liveExams);
+
+        // Filter classes for the dropdown
+        const campusClasses = (classesRes.data || [])
+          .filter(c => selectedCampus === 'Both' || selectedCampus === 'All Campuses' || c.campus_name.includes(selectedCampus))
+          .map(c => c.grade_name);
+        
+        // Remove duplicates (e.g., if there is Grade 1 Section A and Grade 1 Section B)
+        const uniqueClasses = [...new Set(campusClasses)].sort();
+        setAvailableClasses(uniqueClasses);
+        
+        // Auto-select first class if available
+        if (uniqueClasses.length > 0) {
+          setNewExamClass(uniqueClasses[0]);
+        } else {
+          setNewExamClass('');
+        }
+
+      } catch (error) {
+        toast.error('Load Error', { description: 'Could not fetch data.' });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (selectedCampus && selectedCampus !== 'No Campus Available') {
+      fetchData();
     } else {
-      const newResults = mockStudentsForExam[className].map((s) => ({
-        studentId: s.studentId,
-        studentName: s.studentName,
-        grNumber: s.grNumber,
-        subjects: makeEmptySubjects(),
-      }));
-      setStudentResults(newResults);
-      setLastSavedResults(JSON.parse(JSON.stringify(newResults)));
+      setSavedExams([]);
+      setAvailableClasses([]);
+      setIsLoading(false);
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCampus]);
 
   const handleOpenExam = (exam) => {
     setSelectedExam(exam);
     setExamName(exam.name);
     setSelectedClass(exam.class);
-    initResults(exam.class, exam.results);
+    
+    // Automatically rebuild headers from the saved exam data
+    if (exam.results.length > 0) {
+        const pastSubjects = Object.keys(exam.results[0].subjects).map(key => ({
+            name: key, 
+            maxMarks: exam.results[0].subjects[key].total
+        }));
+        setCurrentSubjects(pastSubjects);
+    }
+
+    setStudentResults(JSON.parse(JSON.stringify(exam.results)));
+    setLastSavedResults(JSON.parse(JSON.stringify(exam.results)));
     setIsNewExam(false);
     setViewMode('entry');
     setSelectedStudents(new Set());
   };
 
-  const handleCreateNewExam = () => {
-    if (!newExamName.trim()) {
-      toast.error('Missing Exam Name', { description: 'Please enter an exam name' });
+  const handleCreateNewExam = async () => {
+    if (!newExamName.trim() || !newExamClass) {
+      toast.error('Missing Information', { description: 'Please enter a name and select a class.' });
       return;
     }
-    setExamName(newExamName);
-    setSelectedClass(newExamClass);
-    initResults(newExamClass);
-    setIsNewExam(true);
-    setSelectedExam(null);
-    setShowNewExamDialog(false);
-    setViewMode('entry');
-    setSelectedStudents(new Set());
-    setNewExamName('');
+
+    setIsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      
+      // 1. Fetch real students
+      const studentRes = await axios.get('http://localhost:5000/api/students', {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { campus: selectedCampus, grade: newExamClass }
+      }).catch(() => ({ data: [] }));
+      const rosterData = studentRes.data || [];
+
+      // 2. Fetch real syllabus/courses
+      const courseRes = await axios.get('http://localhost:5000/api/courses', {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { campus: selectedCampus, grade: newExamClass }
+      }).catch(() => ({ data: [] }));
+      const courseData = courseRes.data || [];
+
+      // 3. The "Empty Syllabus" check
+      if (courseData.length === 0) {
+          toast.error("Cannot Create Exam", { description: `No subjects defined for ${newExamClass} in the Syllabus.` });
+          setIsLoading(false);
+          return; 
+      }
+
+      setCurrentSubjects(courseData);
+
+      const newResults = rosterData.map((s) => ({
+        studentId: s.studentId || s.id,
+        studentName: s.studentName || s.full_name || 'Unnamed Student',
+        grNumber: s.grNumber || s.admission_number,
+        subjects: makeEmptySubjects(courseData),
+      }));
+
+      setStudentResults(newResults);
+      setLastSavedResults(JSON.parse(JSON.stringify(newResults)));
+      
+      setExamName(newExamName);
+      setSelectedClass(newExamClass);
+      setIsNewExam(true);
+      setSelectedExam(null);
+      setShowNewExamDialog(false);
+      setViewMode('entry');
+      setSelectedStudents(new Set());
+      setNewExamName('');
+    } catch (error) {
+      toast.error('Error', { description: 'Could not fetch class data.' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleMarksChange = (studentId, subjectName, value) => {
     const marks = value === '' ? null : parseFloat(value);
-    const subjectMax = subjects.find((s) => s.name === subjectName)?.total || 100;
+    const subjectMax = currentSubjects.find((s) => s.name === subjectName)?.maxMarks || 100;
+    
     if (marks !== null && marks > subjectMax) {
       toast.error('Invalid Marks', { description: `Cannot exceed ${subjectMax}` });
       return;
     }
+    
     setStudentResults((prev) =>
       prev.map((r) =>
         r.studentId === studentId
@@ -185,7 +231,7 @@ export function ExamResults() {
     toast.info('Results Reset', { description: 'Reverted to last saved state' });
   };
 
-  const handleSubmitResults = () => {
+  const handleSubmitResults = async () => {
     const incomplete = studentResults.filter((r) =>
       Object.values(r.subjects).some((s) => s.obtained === null)
     );
@@ -196,62 +242,50 @@ export function ExamResults() {
       return;
     }
 
-    if (isNewExam) {
-      const newExam = {
-        id: `EX${String(savedExams.length + 1).padStart(3, '0')}`,
+    try {
+      const token = localStorage.getItem('token');
+      const payload = {
         name: examName,
         class: selectedClass,
         campus: selectedCampus,
         date: new Date().toISOString().split('T')[0],
-        results: JSON.parse(JSON.stringify(studentResults)),
+        results: studentResults,
       };
-      setSavedExams([...savedExams, newExam]);
-      setSelectedExam(newExam);
-      setIsNewExam(false);
-    } else if (selectedExam) {
-      setSavedExams((prev) =>
-        prev.map((e) =>
-          e.id === selectedExam.id
-            ? { ...e, results: JSON.parse(JSON.stringify(studentResults)) }
-            : e
-        )
-      );
+
+      if (isNewExam) {
+        const res = await axios.post('http://localhost:5000/api/exams', payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setSavedExams([...savedExams, res.data]);
+        setSelectedExam(res.data);
+        setIsNewExam(false);
+      } else if (selectedExam) {
+        await axios.put(`http://localhost:5000/api/exams/${selectedExam.id}`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setSavedExams((prev) =>
+          prev.map((e) => (e.id === selectedExam.id ? { ...e, results: studentResults } : e))
+        );
+      }
+      
+      setLastSavedResults(JSON.parse(JSON.stringify(studentResults)));
+      addAuditLog({ action: 'Exam Results Entered', user: currentUser.name, details: `${selectedCampus} - ${selectedClass} - ${examName}` });
+      toast.success('Results Submitted', { description: `Saved for ${studentResults.length} students` });
+    } catch (error) {
+      toast.error('Save Error', { description: 'Failed to save results.' });
     }
-    setLastSavedResults(JSON.parse(JSON.stringify(studentResults)));
-    addAuditLog({
-      action: 'Exam Results Entered',
-      user: currentUser.name,
-      details: `${selectedCampus} - ${selectedClass} - ${examName}`,
-    });
-    toast.success('Results Submitted', {
-      description: `Saved for ${studentResults.length} students`,
-    });
   };
 
-  const handleSelectAll = (checked) => {
-    setSelectedStudents(
-      checked ? new Set(studentResults.map((s) => s.studentId)) : new Set()
-    );
-  };
-
-  const handleSelectStudent = (studentId, checked) => {
-    const next = new Set(selectedStudents);
-    checked ? next.add(studentId) : next.delete(studentId);
-    setSelectedStudents(next);
-  };
+  const handleSelectAll = (checked) => { setSelectedStudents(checked ? new Set(studentResults.map((s) => s.studentId)) : new Set()); };
+  const handleSelectStudent = (studentId, checked) => { const next = new Set(selectedStudents); checked ? next.add(studentId) : next.delete(studentId); setSelectedStudents(next); };
 
   const handleOpenReportCards = () => {
-    if (selectedStudents.size === 0) {
-      toast.error('No Students Selected', { description: 'Select at least one student' });
-      return;
-    }
+    if (selectedStudents.size === 0) { toast.error('No Students Selected', { description: 'Select at least one student' }); return; }
     setReportCardIndex(0);
     setShowReportCard(true);
   };
 
-  const selectedStudentsList = studentResults.filter((s) =>
-    selectedStudents.has(s.studentId)
-  );
+  const selectedStudentsList = studentResults.filter((s) => selectedStudents.has(s.studentId));
   const campusExams = savedExams.filter((e) => e.campus === selectedCampus);
 
   // ── List view ─────────────────────────────────────────────────────────────
@@ -267,6 +301,7 @@ export function ExamResults() {
             <button
               onClick={() => setShowNewExamDialog(true)}
               className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              disabled={isLoading}
             >
               <Plus className="size-4" />
               Create New Exam
@@ -274,7 +309,9 @@ export function ExamResults() {
           </div>
 
           <div className="grid gap-4">
-            {campusExams.length === 0 ? (
+            {isLoading ? (
+               <div className="p-12 text-center text-gray-500">Loading exams...</div>
+            ) : campusExams.length === 0 ? (
               <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-12 text-center">
                 <FileText className="size-12 text-gray-300 mx-auto mb-4" />
                 <h4 className="text-black mb-2">No Exams Yet</h4>
@@ -304,7 +341,7 @@ export function ExamResults() {
                       <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
                         <span>{exam.campus}</span>
                         <span>{new Date(exam.date).toLocaleDateString()}</span>
-                        <span>{exam.results.length} students</span>
+                        <span>{exam.results?.length || 0} students</span>
                       </div>
                     </div>
                     <span className="text-sm text-gray-500">View/Edit →</span>
@@ -339,17 +376,27 @@ export function ExamResults() {
                   value={newExamClass}
                   onChange={(e) => setNewExamClass(e.target.value)}
                   className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-red-600 focus:outline-none"
+                  disabled={availableClasses.length === 0}
                 >
-                  {Object.keys(mockStudentsForExam).map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
+                  {/* Dynamic Database Values */}
+                  {availableClasses.length > 0 ? (
+                    availableClasses.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))
+                  ) : (
+                    <option value="">No classes available</option>
+                  )}
                 </select>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowNewExamDialog(false)}>Cancel</Button>
-              <Button onClick={handleCreateNewExam} className="bg-red-600 hover:bg-red-700 text-white">
-                Create Exam
+              <Button 
+                onClick={handleCreateNewExam} 
+                disabled={isLoading || !newExamClass} 
+                className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+              >
+                {isLoading ? 'Loading...' : 'Create Exam'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -367,11 +414,7 @@ export function ExamResults() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => {
-                if (
-                  hasUnsavedChanges &&
-                  !window.confirm('You have unsaved changes. Go back anyway?')
-                )
-                  return;
+                if (hasUnsavedChanges && !window.confirm('You have unsaved changes. Go back anyway?')) return;
                 setViewMode('list');
               }}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -414,10 +457,10 @@ export function ExamResults() {
                   </th>
                   <th className="px-4 py-3 text-left text-sm">GR #</th>
                   <th className="px-4 py-3 text-left text-sm">Student Name</th>
-                  {subjects.map((sub) => (
+                  {currentSubjects.map((sub) => (
                     <th key={sub.name} className="px-4 py-3 text-center text-xs">
                       {sub.name}<br />
-                      <span className="text-gray-300">(Max: {sub.total})</span>
+                      <span className="text-gray-300">(Max: {sub.maxMarks})</span>
                     </th>
                   ))}
                   <th className="px-4 py-3 text-center text-sm bg-gray-800">Total</th>
@@ -426,71 +469,60 @@ export function ExamResults() {
                 </tr>
               </thead>
               <tbody className="divide-y-2 divide-gray-200">
-                {studentResults.map((result) => {
-                  const { total, percentage, grade } = calcGrade(result);
-                  return (
-                    <tr
-                      key={result.studentId}
-                      className={`hover:bg-gray-50 ${selectedStudents.has(result.studentId) ? 'bg-red-50' : ''}`}
-                    >
-                      <td className="px-4 py-3">
-                        <Checkbox
-                          checked={selectedStudents.has(result.studentId)}
-                          onCheckedChange={(checked) => handleSelectStudent(result.studentId, checked)}
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{result.grNumber}</td>
-                      <td className="px-4 py-3 text-sm text-black">{result.studentName}</td>
-                      {subjects.map((sub) => (
-                        <td key={sub.name} className="px-4 py-3">
-                          <div className="flex flex-col gap-1">
-                            <input
-                              type="number"
-                              min="0"
-                              max={sub.total}
-                              value={result.subjects[sub.name].obtained ?? ''}
-                              onChange={(e) => handleMarksChange(result.studentId, sub.name, e.target.value)}
-                              placeholder="0"
-                              className="w-20 px-2 py-1 text-center border-2 border-gray-300 rounded focus:border-red-600 focus:outline-none text-sm"
-                            />
-                            <select
-                              className="w-20 px-1 py-1 text-xs border border-gray-200 rounded focus:border-red-600 focus:outline-none"
-                              value=""
-                              onChange={(e) =>
-                                e.target.value &&
-                                handleMarksChange(result.studentId, sub.name, e.target.value)
-                              }
-                            >
-                              <option value="">Quick</option>
-                              {Array.from({ length: Math.floor(sub.total / 10) + 1 }, (_, i) => {
-                                const v = Math.min(i * 10, sub.total);
-                                return <option key={v} value={v}>{v}</option>;
-                              })}
-                              <option value={sub.total}>{sub.total}</option>
-                            </select>
-                          </div>
+                {studentResults.length === 0 ? (
+                  <tr><td colSpan={10} className="p-8 text-center text-gray-500">No students found in this class.</td></tr>
+                ) : (
+                  studentResults.map((result) => {
+                    const { total, percentage, grade } = calcGrade(result);
+                    return (
+                      <tr
+                        key={result.studentId}
+                        className={`hover:bg-gray-50 ${selectedStudents.has(result.studentId) ? 'bg-red-50' : ''}`}
+                      >
+                        <td className="px-4 py-3">
+                          <Checkbox
+                            checked={selectedStudents.has(result.studentId)}
+                            onCheckedChange={(checked) => handleSelectStudent(result.studentId, checked)}
+                          />
                         </td>
-                      ))}
-                      <td className="px-4 py-3 text-center text-sm text-black bg-gray-50">{total}</td>
-                      <td className="px-4 py-3 text-center text-sm text-black bg-gray-50">
-                        {percentage !== '-' ? `${percentage}%` : '-'}
-                      </td>
-                      <td className="px-4 py-3 text-center bg-gray-50">
-                        {grade !== '-' ? (
-                          <span className={`px-2 py-1 text-xs rounded ${
-                            grade === 'A+' || grade === 'A'
-                              ? 'bg-green-100 text-green-800'
-                              : grade === 'B' || grade === 'C'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {grade}
-                          </span>
-                        ) : '-'}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        <td className="px-4 py-3 text-sm text-gray-700">{result.grNumber}</td>
+                        <td className="px-4 py-3 text-sm text-black">{result.studentName}</td>
+                        {currentSubjects.map((sub) => (
+                          <td key={sub.name} className="px-4 py-3">
+                            <div className="flex flex-col gap-1 items-center">
+                              <input
+                                type="number"
+                                min="0"
+                                max={sub.maxMarks}
+                                value={result.subjects[sub.name].obtained ?? ''}
+                                onChange={(e) => handleMarksChange(result.studentId, sub.name, e.target.value)}
+                                placeholder="0"
+                                className="w-20 px-2 py-1 text-center border-2 border-gray-300 rounded focus:border-red-600 focus:outline-none text-sm"
+                              />
+                            </div>
+                          </td>
+                        ))}
+                        <td className="px-4 py-3 text-center text-sm text-black bg-gray-50">{total}</td>
+                        <td className="px-4 py-3 text-center text-sm text-black bg-gray-50">
+                          {percentage !== '-' ? `${percentage}%` : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-center bg-gray-50">
+                          {grade !== '-' ? (
+                            <span className={`px-2 py-1 text-xs rounded ${
+                              grade === 'A+' || grade === 'A'
+                                ? 'bg-green-100 text-green-800'
+                                : grade === 'B' || grade === 'C'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {grade}
+                            </span>
+                          ) : '-'}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -538,6 +570,8 @@ export function ExamResults() {
           {selectedStudentsList[reportCardIndex] && (() => {
             const student = selectedStudentsList[reportCardIndex];
             const { total, percentage, grade } = calcGrade(student);
+            const absoluteMax = currentSubjects.reduce((acc, sub) => acc + sub.maxMarks, 0);
+
             return (
               <div className="space-y-6 py-4">
                 <div className="text-center border-b-2 border-gray-200 pb-4">
@@ -570,7 +604,7 @@ export function ExamResults() {
                       <tr className="bg-gray-50 font-semibold">
                         <td className="px-4 py-3 text-sm text-black">Total</td>
                         <td className="px-4 py-3 text-center text-sm">{total}</td>
-                        <td className="px-4 py-3 text-center text-sm">400</td>
+                        <td className="px-4 py-3 text-center text-sm">{absoluteMax}</td>
                         <td className="px-4 py-3 text-center text-sm">
                           {percentage !== '-' ? `${percentage}%` : '-'}
                         </td>
@@ -602,25 +636,9 @@ export function ExamResults() {
             );
           })()}
           <DialogFooter className="flex justify-between">
-            <Button
-              variant="outline"
-              onClick={() => setReportCardIndex(Math.max(0, reportCardIndex - 1))}
-              disabled={reportCardIndex === 0}
-            >
-              ← Previous
-            </Button>
-            <span className="text-sm text-gray-600 self-center">
-              {reportCardIndex + 1} / {selectedStudentsList.length}
-            </span>
-            <Button
-              variant="outline"
-              onClick={() =>
-                setReportCardIndex(Math.min(selectedStudentsList.length - 1, reportCardIndex + 1))
-              }
-              disabled={reportCardIndex === selectedStudentsList.length - 1}
-            >
-              Next →
-            </Button>
+            <Button variant="outline" onClick={() => setReportCardIndex(Math.max(0, reportCardIndex - 1))} disabled={reportCardIndex === 0}>← Previous</Button>
+            <span className="text-sm text-gray-600 self-center">{reportCardIndex + 1} / {selectedStudentsList.length}</span>
+            <Button variant="outline" onClick={() => setReportCardIndex(Math.min(selectedStudentsList.length - 1, reportCardIndex + 1))} disabled={reportCardIndex === selectedStudentsList.length - 1}>Next →</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

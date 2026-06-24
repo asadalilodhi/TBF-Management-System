@@ -1,41 +1,41 @@
-import { useState } from 'react';
-import { GraduationCap, UserPlus, CheckCircle, Building2, ChevronRight, ExternalLink } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useRegistration } from './RegistrationContext.jsx';
+import { UserPlus, CheckCircle } from 'lucide-react';
 import { useToast } from './ui/toast.jsx';
 
-const ROLES = ['teacher', 'admin'];
-const CAMPUSES = ['North Campus', 'South Campus'];
+const ROLES = ['teacher', 'staff', 'campus_admin'];
 
-const SIDE_ITEMS = [
-  {
-    icon: UserPlus,
-    title: 'Request Staff Access',
-    description: 'Submit a registration request that will be reviewed and approved by a Super Admin.',
-  },
-  {
-    icon: Building2,
-    title: 'Campus Assignment',
-    description: 'Select your campus during registration so you are placed in the right environment from day one.',
-  },
-  {
-    icon: ChevronRight,
-    title: 'Role-Based Onboarding',
-    description: 'Whether you are a teacher or admin, your permissions will be set up correctly upon approval.',
-  },
-];
-
-export function RegistrationScreen({ onBackToLogin }) {
+export function RegistrationScreen({ onNavigateBack }) {
   const { addRegistrationRequest } = useRegistration();
   const toast = useToast();
-
+  
+  // NEW: Dynamic Campuses State instead of a hardcoded array
+  const [availableCampuses, setAvailableCampuses] = useState([]);
+  
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    role: 'teacher',
-    campus: 'North Campus',
+    firstName: '', lastName: '', email: '', phone: '',
+    role: 'Teacher', department: '', campus: '',
+    experience: '', qualifications: '', whyJoin: ''
   });
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // NEW: Fetch campuses dynamically for the dropdown
+  useEffect(() => {
+    const fetchPublicCampuses = async () => {
+      try {
+        // Using a public endpoint so unauthenticated users can see the campus list
+        const res = await axios.get('http://localhost:5000/api/public/campuses').catch(() => ({ data: null }));
+        const liveData = res.data || [{ name: 'North Campus' }, { name: 'South Campus' }]; // Fallback
+        setAvailableCampuses(liveData.map(c => c.name));
+      } catch (error) {
+        console.error("Failed to load campuses");
+        setAvailableCampuses(['North Campus', 'South Campus']); // Fallback if API fails
+      }
+    };
+    fetchPublicCampuses();
+  }, []);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -123,6 +123,17 @@ export function RegistrationScreen({ onBackToLogin }) {
               Back to Login
             </button>
           </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Request Submitted!</h2>
+          <p className="text-gray-500 text-sm mb-6">
+            Your registration request has been sent to the Super Admin for approval.
+            You will be notified once your account is approved.
+          </p>
+          <button
+            onClick={onNavigateBack}
+            className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Back to Login
+          </button>
         </div>
       </div>
     );
@@ -293,10 +304,29 @@ export function RegistrationScreen({ onBackToLogin }) {
               onClick={onBackToLogin}
               className="w-full py-3.5 bg-white text-gray-700 font-semibold rounded-xl border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
             >
-              ← Back to Login
-            </button>
+              {availableCampuses.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
 
-          </form>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Submitting...' : 'Submit Registration Request'}
+          </button>
+        </form>
+
+        {/* Back to login */}
+        <div className="mt-4 text-center">
+          <button
+            onClick={onNavigateBack}
+            className="text-sm text-gray-500 hover:text-red-600 transition-colors"
+          >
+            ← Back to Login
+          </button>
         </div>
       </div>
     </div>

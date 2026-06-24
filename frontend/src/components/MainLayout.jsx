@@ -16,6 +16,8 @@ import { Syllabus } from './Syllabus.jsx';
 import { AuditLogs } from './AuditLogs.jsx';
 import { AdminSettings } from './AdminSettings.jsx';
 import { SuperAdminDashboard } from './SuperAdminDashboard.jsx';
+import { StaffAttendance } from './StaffAttendance.jsx';
+import { TeacherAttendance } from './TeacherAttendance.jsx';
 
 const NAV_ITEMS = [
   { id: 'dashboard',  label: 'Dashboard',             icon: LayoutDashboard, roles: ['teacher', 'admin', 'super_admin'] },
@@ -26,6 +28,8 @@ const NAV_ITEMS = [
   { id: 'syllabus',   label: 'Syllabus',              icon: BookOpen,        roles: ['teacher', 'admin', 'super_admin'] },
   { id: 'audit',      label: 'Audit Logs',            icon: FileBarChart,    roles: ['super_admin'] },
   { id: 'superadmin', label: 'Registration Requests', icon: UserCheck,       roles: ['super_admin'] },
+  { id: 'staff_attendance', label: 'Staff Attendance', icon: UserCheck, roles: ['admin', 'super_admin'] },
+  { id: 'teacher_attendance',    label: 'Teacher Attendance',    icon: ClipboardCheck, roles: ['teacher'] },
   { id: 'settings',   label: 'Settings',              icon: Settings,        roles: ['teacher', 'admin', 'super_admin'] },
 ];
 
@@ -41,8 +45,9 @@ export default function MainLayout() {
 
   const visibleNav = NAV_ITEMS.filter((n) => n.roles.includes(currentUser.role));
 
+  // Strictly filter real campuses based on user role (No "Both" injection)
   const availableCampuses =
-    currentUser.campus === 'Both'
+    currentUser.role === 'super_admin'
       ? campuses
       : campuses.filter((c) => c.name === currentUser.campus);
 
@@ -157,17 +162,21 @@ export default function MainLayout() {
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsCampusDropdownOpen(false)} />
                   <div className="absolute right-0 top-full mt-2 w-40 lg:w-48 bg-white border-2 border-black rounded-lg shadow-xl z-20 overflow-hidden">
-                    {availableCampuses.map((campus) => (
-                      <button
-                        key={campus.name}
-                        onClick={() => { setSelectedCampus(campus.name); setIsCampusDropdownOpen(false); }}
-                        className={`w-full px-3 lg:px-4 py-2 lg:py-3 text-left text-xs lg:text-sm transition-colors ${
-                          selectedCampus === campus.name ? 'bg-red-600 text-white' : 'text-black hover:bg-gray-100'
-                        }`}
-                      >
-                        {campus.name}
-                      </button>
-                    ))}
+                    {availableCampuses.length > 0 ? (
+                      availableCampuses.map((campus) => (
+                        <button
+                          key={campus.name}
+                          onClick={() => { setSelectedCampus(campus.name); setIsCampusDropdownOpen(false); }}
+                          className={`w-full px-3 lg:px-4 py-2 lg:py-3 text-left text-xs lg:text-sm transition-colors ${
+                            selectedCampus === campus.name ? 'bg-red-600 text-white' : 'text-black hover:bg-gray-100'
+                          }`}
+                        >
+                          {campus.name}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-4 py-3 text-sm text-gray-500 text-center">No campuses found</div>
+                    )}
                   </div>
                 </>
               )}
@@ -194,6 +203,8 @@ export default function MainLayout() {
           {activeScreen === 'audit'      && <AuditLogs />}
           {activeScreen === 'superadmin' && <SuperAdminDashboard />}
           {activeScreen === 'settings'   && <AdminSettings />}
+          {activeScreen === 'staff_attendance' && <StaffAttendance />}
+          {activeScreen === 'teacher_attendance'    && <TeacherAttendance />}
         </main>
       </div>
     </div>

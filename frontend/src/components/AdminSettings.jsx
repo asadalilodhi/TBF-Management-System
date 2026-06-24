@@ -1,12 +1,14 @@
-import { useState } from 'react';
-import { Shield, Settings as SettingsIcon, Database, Plus, Edit, Trash2, Building2 } from 'lucide-react';
-import { useUser, mockUsers } from './UserContext.jsx';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+import { Shield, Settings as SettingsIcon, Database, Plus, Edit, Trash2, Building2, UserPlus, Users } from 'lucide-react';
+import { useUser } from './UserContext.jsx';
 import { useCampus } from './CampusContext.jsx';
 import { useAuditLog } from './AuditLogContext.jsx';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog.jsx';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog.jsx';
 import { useToast } from './ui/toast.jsx';
 
-const emptyForm = { name: '', address: '', phone: '' };
+const emptyCampusForm = { name: '', address: '', phone: '' };
+
 
 export function AdminSettings() {
   const { currentUser } = useUser();
@@ -14,281 +16,150 @@ export function AdminSettings() {
   const { addAuditLog } = useAuditLog();
   const toast = useToast();
 
+  // Campus States
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(emptyCampusForm);
 
-  const handleAdd = () => {
-    if (!form.name.trim()) { toast.error('Please enter a campus name'); return; }
-    addCampus({ ...form, isActive: true });
-    addAuditLog({ action: 'Campus Added', user: currentUser.name, details: `New campus: ${form.name}` });
-    toast.success('Campus Added', { description: `${form.name} has been created` });
-    setForm(emptyForm);
-    setShowAddDialog(false);
+  // ── Campus Handlers ───────────────────────────────────────────────
+  const handleAddCampus = async () => {
+    if (!form.name.trim()) return toast.error('Campus name is required');
+    try {
+      await addCampus({ ...form, code: `CMP-${Date.now().toString().slice(-4)}` });
+      addAuditLog({ action: 'Campus Created', user: currentUser.name, details: form.name });
+      toast.success('Campus added successfully');
+      setShowAddDialog(false);
+      setForm(emptyCampusForm);
+    } catch (error) {
+      toast.error('Failed to add campus');
+    }
   };
 
-  const handleEdit = () => {
-    if (!form.name.trim() || !editingId) { toast.error('Please enter a campus name'); return; }
-    updateCampus(editingId, form);
-    addAuditLog({ action: 'Campus Updated', user: currentUser.name, details: `Campus updated: ${form.name}` });
-    toast.success('Campus Updated');
-    setForm(emptyForm);
-    setEditingId(null);
-    setShowEditDialog(false);
+  const handleEditCampus = async () => {
+    if (!form.name.trim()) return toast.error('Campus name is required');
+    try {
+      await updateCampus(editingId, form);
+      addAuditLog({ action: 'Campus Updated', user: currentUser.name, details: form.name });
+      toast.success('Campus updated successfully');
+      setShowEditDialog(false);
+      setForm(emptyCampusForm);
+      setEditingId(null);
+    } catch (error) {
+      toast.error('Failed to update campus');
+    }
   };
 
-  const handleDelete = (id, name) => {
-    if (campuses.length <= 1) { toast.error('Cannot delete the last campus'); return; }
-    if (!window.confirm(`Delete ${name}? This cannot be undone.`)) return;
-    deleteCampus(id);
-    addAuditLog({ action: 'Campus Deleted', user: currentUser.name, details: `Campus deleted: ${name}` });
-    toast.success('Campus Deleted');
+
+  // ── Database Backup ───────────────────────────────────────────────
+  const handleBackupDatabase = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      toast.info('Preparing Backup...', { description: 'Generating CSV file from database.' });
+      
+      const response = await axios.get('http://localhost:5000/api/system/backup', {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob', 
+      }).catch(() => { throw new Error('API Pending'); });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `TBF_Database_Backup_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      
+      addAuditLog({ action: 'Database Backup Downloaded', user: currentUser.name, details: 'Full system backup exported' });
+      toast.success('Backup Complete', { description: 'File has been downloaded.' });
+    } catch (error) {
+      toast.error('Backup Failed', { description: 'The backup API route is not built yet.' });
+    }
   };
 
-  const openEdit = (id) => {
-    const c = campuses.find((x) => x.id === id);
-    if (!c) return;
-    setForm({ name: c.name, address: c.address, phone: c.phone });
-    setEditingId(id);
-    setShowEditDialog(true);
-  };
-
-  const activeCampuses = campuses.filter((c) => c.isActive);
-
-  const campusFormFields = (
-    <div className="space-y-4">
-      {[
-        ['name', 'Campus Name *', 'e.g., East Campus'],
-        ['address', 'Address', 'e.g., Block C, East District, Karachi'],
-        ['phone', 'Phone', 'e.g., +92-21-1111-0003'],
-      ].map(([key, label, placeholder]) => (
-        <div key={key}>
-          <label className="block text-sm text-gray-700 mb-2">{label}</label>
-          <input
-            type="text"
-            value={form[key]}
-            onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-            placeholder={placeholder}
-            className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-red-600 focus:outline-none text-sm"
-          />
-        </div>
-      ))}
-    </div>
-  );
+  // If not super admin, block access
+  if (currentUser.role !== 'super_admin') {
+    return <div className="p-8 text-center text-gray-500">You do not have permission to view this page.</div>;
+  }
 
   return (
-    <div className="space-y-8">
-      {/* Campus Management - Super Admin Only */}
-      {currentUser.role === 'super_admin' && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg text-black flex items-center gap-2">
-              <Building2 className="size-5" /> Campus Management
-            </h3>
-            <button
-              onClick={() => { setForm(emptyForm); setShowAddDialog(true); }}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm cursor-pointer"
-            >
-              <Plus className="size-4" /> Add New Campus
-            </button>
-          </div>
+    <div className="space-y-8 max-w-6xl mx-auto">
+      <div>
+        <h3 className="text-xl text-black font-bold">System Settings</h3>
+        <p className="text-sm text-gray-500 mt-1">Manage campuses, users, and system configurations</p>
+      </div>
 
+      {/* Campus Management */}
+      <div className="bg-white border-2 border-black rounded-lg shadow-sm overflow-hidden">
+        <div className="bg-gray-50 p-4 border-b-2 border-gray-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Building2 className="size-5 text-gray-700" />
+            <h4 className="font-semibold text-black">Campus Management</h4>
+          </div>
+          <button onClick={() => setShowAddDialog(true)} className="flex items-center gap-1 px-3 py-1.5 bg-black text-white text-sm rounded hover:bg-gray-800 transition-colors">
+            <Plus className="size-4" /> Add Campus
+          </button>
+        </div>
+        <div className="p-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {campuses.map((campus) => (
-              <div
-                key={campus.id}
-                className="bg-white border-2 border-gray-200 rounded-lg p-5 shadow-sm hover:border-red-600 transition-colors"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="size-5 text-red-600" />
-                    <h4 className="text-black font-medium">{campus.name}</h4>
-                  </div>
-                  <span className={`px-2 py-0.5 text-xs rounded ${campus.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                    {campus.isActive ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-start gap-2">
-                    <span className="text-xs text-gray-500 w-16">Address:</span>
-                    <span className="text-xs text-gray-700 flex-1">{campus.address || 'Not specified'}</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-xs text-gray-500 w-16">Phone:</span>
-                    <span className="text-xs text-gray-700 flex-1">{campus.phone || 'Not specified'}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 pt-3 border-t border-gray-200">
-                  <button onClick={() => openEdit(campus.id)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded hover:bg-gray-200 transition-colors">
-                    <Edit className="size-3.5" /> Edit
-                  </button>
-                  <button onClick={() => handleDelete(campus.id, campus.name)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-red-600 bg-red-50 rounded hover:bg-red-100 transition-colors">
-                    <Trash2 className="size-3.5" /> Delete
-                  </button>
+            {campuses.map(campus => (
+              <div key={campus.id} className="border-2 border-gray-200 rounded-lg p-4 hover:border-black transition-colors group relative">
+                <h5 className="font-semibold text-black text-lg">{campus.name}</h5>
+                <p className="text-sm text-gray-600 mt-1">{campus.address || 'No address provided'}</p>
+                <p className="text-sm text-gray-600">{campus.phone || 'No phone provided'}</p>
+                
+                <div className="absolute top-4 right-4 flex opacity-0 group-hover:opacity-100 transition-opacity gap-1">
+                  <button onClick={() => { setForm(campus); setEditingId(campus.id); setShowEditDialog(true); }} className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700"><Edit className="size-4" /></button>
+                  <button onClick={() => deleteCampus(campus.id)} className="p-1.5 bg-red-50 hover:bg-red-100 rounded text-red-600"><Trash2 className="size-4" /></button>
                 </div>
               </div>
             ))}
+            {campuses.length === 0 && <p className="text-gray-500 text-sm py-4">No campuses configured yet.</p>}
           </div>
         </div>
-      )}
+      </div>
 
-      {/* User Access Management */}
-      <div>
-        <h3 className="text-lg text-black mb-4 flex items-center gap-2">
-          <Shield className="size-5" /> User Access Management
-        </h3>
-        <div className="bg-white border-2 border-black rounded-lg shadow-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px]">
-              <thead className="bg-black text-white">
-                <tr>
-                  {['User ID', 'Name', 'Role', 'Campus', 'Email', 'Status', 'Actions'].map((h) => (
-                    <th key={h} className="px-6 py-4 text-left text-sm">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y-2 divide-gray-200">
-                {mockUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm text-gray-700">{user.id}</td>
-                    <td className="px-6 py-4 text-sm text-black">{user.name}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 text-xs rounded ${
-                        user.role === 'super_admin' ? 'bg-red-100 text-red-800' :
-                        user.role === 'admin' ? 'bg-black text-white' : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {user.role === 'super_admin' ? 'Super Admin' : user.role === 'admin' ? 'Admin' : 'Teacher'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-700">{user.campus}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{user.email}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="inline-flex px-3 py-1 text-xs rounded bg-green-100 text-green-800">Active</span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <button className="text-sm text-red-600 hover:underline">Edit</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {/* Database Backup Section */}
+      <div className="bg-white border-2 border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="bg-gray-50 p-4 border-b border-gray-200 flex items-center gap-2">
+          <Database className="size-5 text-gray-700" />
+          <h4 className="font-semibold text-black">Data & Backups</h4>
         </div>
-        <div className="mt-4">
-          <button className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm">
-            + Add New User
+        <div className="p-6">
+          <p className="text-sm text-gray-600 mb-4">Export a full copy of your database to a CSV file. This includes all students, staff, attendance, and grades.</p>
+          <button onClick={handleBackupDatabase} className="px-4 py-2 border-2 border-black text-black font-medium rounded hover:bg-gray-50 transition-colors text-sm">
+            Download Database Backup (.csv)
           </button>
         </div>
       </div>
 
-      {/* System Config */}
-      <div>
-        <h3 className="text-lg text-black mb-4 flex items-center gap-2">
-          <SettingsIcon className="size-5" /> System Configuration
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[
-            {
-              title: 'Campus Configuration',
-              rows: [
-                ['Total Campuses', activeCampuses.length],
-                ...activeCampuses.slice(0, 3).map((c) => [c.name, 'Active']),
-                ['Total Teachers', 24],
-              ],
-            },
-            {
-              title: 'Academic Year',
-              rows: [['Current Year', '2025-2026'], ['Start Date', 'Aug 1, 2025'], ['End Date', 'Jun 30, 2026']],
-            },
-            {
-              title: 'Student Information',
-              rows: [
-                ['Total Students', 524],
-                ...activeCampuses.slice(0, 2).map((c, i) => [c.name, `${i === 0 ? 287 : 237} students`]),
-              ],
-            },
-            {
-              title: 'Scholarship Statistics',
-              rows: [['Active Scholarships', 156], ['Full (100%)', 42], ['Partial', 114]],
-            },
-          ].map((card) => (
-            <div key={card.title} className="bg-white border-2 border-gray-200 rounded-lg p-6 shadow-sm">
-              <h4 className="text-black mb-4">{card.title}</h4>
-              <div className="space-y-3">
-                {card.rows.map(([label, val], i) => (
-                  <div key={i} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-0">
-                    <span className="text-sm text-gray-700">{label}</span>
-                    <span className="text-sm text-black">{val}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Backup */}
-      <div>
-        <h3 className="text-lg text-black mb-4 flex items-center gap-2">
-          <Database className="size-5" /> Database & Backup
-        </h3>
-        <div className="bg-white border-2 border-gray-200 rounded-lg p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-black">Last Backup</p>
-              <p className="text-xs text-gray-600 mt-1">March 2, 2026 at 11:45 PM</p>
-            </div>
-            <button className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors text-sm">
-              Create Backup
-            </button>
-          </div>
-          <p className="text-xs text-gray-600 mt-4 pt-4 border-t border-gray-200">
-            Automatic backups scheduled daily at 11:45 PM. Stored securely for 30 days.
-          </p>
-        </div>
-      </div>
-
-      {currentUser.role !== 'super_admin' && (
-        <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4">
-          <p className="text-sm text-yellow-800">
-            <strong>Note:</strong> Some settings are restricted to Super Admin users only.
-          </p>
-        </div>
-      )}
-
-      {/* Add Campus Dialog */}
+      {/* Add / Edit Campus Dialogs */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New Campus</DialogTitle>
-            <DialogDescription>Create a new campus for The Bridge Foundation</DialogDescription>
-          </DialogHeader>
-          {campusFormFields}
+          <DialogHeader><DialogTitle>Add New Campus</DialogTitle><DialogDescription>Register a new campus location</DialogDescription></DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div><label className="block text-sm mb-1">Campus Name *</label><input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full p-2 border-2 border-gray-300 rounded focus:border-red-600 outline-none" placeholder="e.g. North Campus" /></div>
+            <div><label className="block text-sm mb-1">Address</label><input type="text" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full p-2 border-2 border-gray-300 rounded focus:border-red-600 outline-none" /></div>
+            <div><label className="block text-sm mb-1">Phone</label><input type="text" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full p-2 border-2 border-gray-300 rounded focus:border-red-600 outline-none" /></div>
+          </div>
           <div className="flex justify-end gap-2 pt-4 border-t mt-4">
-            <button onClick={() => { setShowAddDialog(false); setForm(emptyForm); }}
-              className="px-4 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm">Cancel</button>
-            <button onClick={handleAdd}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm">Add Campus</button>
+            <button onClick={() => { setShowAddDialog(false); setForm(emptyCampusForm); }} className="px-4 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50 text-sm">Cancel</button>
+            <button onClick={handleAddCampus} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">Add Campus</button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Campus Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Campus</DialogTitle>
-            <DialogDescription>Update campus information</DialogDescription>
-          </DialogHeader>
-          {campusFormFields}
+          <DialogHeader><DialogTitle>Edit Campus</DialogTitle><DialogDescription>Update campus information</DialogDescription></DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div><label className="block text-sm mb-1">Campus Name *</label><input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full p-2 border-2 border-gray-300 rounded focus:border-red-600 outline-none" /></div>
+            <div><label className="block text-sm mb-1">Address</label><input type="text" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full p-2 border-2 border-gray-300 rounded focus:border-red-600 outline-none" /></div>
+            <div><label className="block text-sm mb-1">Phone</label><input type="text" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full p-2 border-2 border-gray-300 rounded focus:border-red-600 outline-none" /></div>
+          </div>
           <div className="flex justify-end gap-2 pt-4 border-t mt-4">
-            <button onClick={() => { setShowEditDialog(false); setForm(emptyForm); setEditingId(null); }}
-              className="px-4 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm">Cancel</button>
-            <button onClick={handleEdit}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm">Update Campus</button>
+            <button onClick={() => { setShowEditDialog(false); setForm(emptyCampusForm); setEditingId(null); }} className="px-4 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50 text-sm">Cancel</button>
+            <button onClick={handleEditCampus} className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 text-sm">Save Changes</button>
           </div>
         </DialogContent>
       </Dialog>
