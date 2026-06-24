@@ -1,55 +1,78 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
 
 const CampusContext = createContext(undefined);
 
-const initialCampuses = [
-  {
-    id: 'C1',
-    name: 'North Campus',
-    address: 'Block A, North District, Karachi',
-    phone: '+92-21-1111-0001',
-    isActive: true,
-  },
-  {
-    id: 'C2',
-    name: 'South Campus',
-    address: 'Block B, South District, Karachi',
-    phone: '+92-21-1111-0002',
-    isActive: true,
-  },
-];
+export function CampusProvider({ children }) {
+  const [campuses, setCampuses] = useState([]);
+  const [selectedCampus, setSelectedCampus] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
-export function CampusProvider({ children, initialCampus }) {
-  const [campuses, setCampuses] = useState(initialCampuses);
-  const [selectedCampus, setSelectedCampus] = useState(initialCampus || 'North Campus');
+  // 1. Fetch real campuses from Postgres (NO MOCK DATA)
+  const fetchCampuses = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('http://localhost:5000/api/campuses', {
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => ({ data: [] }));
 
-  const addCampus = (campus) => {
-    const newCampus = {
-      ...campus,
-      id: `C${campuses.length + 1}`,
-    };
-    setCampuses([...campuses, newCampus]);
+      const liveData = res.data || [];
+      setCampuses(liveData);
+      
+      // Auto-select the first campus if one exists
+      if (liveData.length > 0) {
+        setSelectedCampus(liveData[0].name);
+      } else {
+        setSelectedCampus('No Campus Available');
+      }
+    } catch (error) {
+      console.error('Failed to fetch campuses', error);
+      setCampuses([]);
+      setSelectedCampus('No Campus Available');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const updateCampus = (id, updates) => {
-    setCampuses(campuses.map(campus =>
-      campus.id === id ? { ...campus, ...updates } : campus
-    ));
+  useEffect(() => {
+    fetchCampuses();
+  }, []);
+
+  const addCampus = async (campus) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post('http://localhost:5000/api/campuses', campus, { headers: { Authorization: `Bearer ${token}` }});
+      await fetchCampuses();
+    } catch (error) {
+      console.error('Failed to add campus');
+      throw error;
+    }
   };
 
-  const deleteCampus = (id) => {
-    setCampuses(campuses.filter(campus => campus.id !== id));
+  const updateCampus = async (id, updates) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`http://localhost:5000/api/campuses/${id}`, updates, { headers: { Authorization: `Bearer ${token}` }});
+      await fetchCampuses();
+    } catch (error) {
+      console.error('Failed to update campus');
+      throw error;
+    }
+  };
+
+  const deleteCampus = async (id) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`http://localhost:5000/api/campuses/${id}`, { headers: { Authorization: `Bearer ${token}` }});
+      await fetchCampuses();
+    } catch (error) {
+      console.error('Failed to delete campus');
+      throw error;
+    }
   };
 
   return (
-    <CampusContext.Provider value={{
-      campuses,
-      selectedCampus,
-      setSelectedCampus,
-      addCampus,
-      updateCampus,
-      deleteCampus
-    }}>
+    <CampusContext.Provider value={{ campuses, selectedCampus, setSelectedCampus, addCampus, updateCampus, deleteCampus, isLoading }}>
       {children}
     </CampusContext.Provider>
   );
@@ -57,8 +80,6 @@ export function CampusProvider({ children, initialCampus }) {
 
 export function useCampus() {
   const context = useContext(CampusContext);
-  if (context === undefined) {
-    throw new Error('useCampus must be used within a CampusProvider');
-  }
+  if (context === undefined) throw new Error('useCampus must be used within a CampusProvider');
   return context;
 }

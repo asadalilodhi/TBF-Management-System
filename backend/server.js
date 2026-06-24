@@ -10,6 +10,27 @@ app.use(express.json());
 
 const SECRET_KEY = 'your_super_secret_jwt_key'; // In prod, put this in .env
 
+
+async function getLookupId(tableName, searchColumn, searchValue, parentColumn = null, parentId = null) {
+  let query = `SELECT id FROM ${tableName} WHERE ${searchColumn} = $1`;
+  let params = [searchValue];
+
+  // Scoped lookup (e.g., Find "Section A", but ONLY inside "Grade 3")
+  if (parentColumn && parentId) {
+    query += ` AND ${parentColumn} = $2`;
+    params.push(parentId);
+  }
+
+  const result = await pool.query(query, params);
+  if (result.rows.length === 0) {
+    throw new Error(`Could not find a valid ${tableName} matching '${searchValue}'`);
+  }
+  return result.rows[0].id;
+}
+
+
+
+
 // LOGIN ROUTE
 app.post('/api/auth/login', async (req, res) => {
   const { email, password, campus } = req.body; // 'campus' comes from the Login screen dropdown
@@ -96,9 +117,145 @@ app.get('/', async (req, res) => {
   }
 });
 
+
+// Add a new Campus (Super Admin Only)
+app.post('/api/campuses', authenticateToken, async (req, res) => {
+  const { name, address, phone } = req.body;
+
+  // Security Check: Only Super Admins can create campuses
+  if (req.user.role !== 'super_admin') {
+    return res.status(403).json({ error: 'Only Super Admins can manage campuses.' });
+  }
+
+  if (!name) {
+    return res.status(400).json({ error: 'Campus name is required.' });
+  }
+
+  try {
+    const query = `
+      INSERT INTO campuses (name, code, address, phone, status)
+      VALUES ($1, $2, $3, $4, 'active')
+      RETURNING *
+    `;
+    // We generate a simple code based on the first 3 letters of the name + random number
+    const code = `${name.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const values = [name, code, address, phone];
+
+    const result = await pool.query(query, values);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error creating campus:', err);
+    // Handle specific PostgreSQL error for duplicate names (unique constraint violation)
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'A campus with this name already exists.' });
+    }
+    res.status(500).json({ error: 'Server error while creating campus.' });
+  }
+});
+
+// Update an existing Campus (Super Admin Only)
+app.put('/api/campuses/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { name, address, phone } = req.body;
+
+  if (req.user.role !== 'super_admin') {
+    return res.status(403).json({ error: 'Only Super Admins can manage campuses.' });
+  }
+
+  try {
+    const query = `
+      UPDATE campuses
+      SET name = $1, address = $2, phone = $3
+      WHERE id = $4
+      RETURNING *
+    `;
+    const result = await pool.query(query, [name, address, phone, id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Campus not found.' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating campus:', err);
+    res.status(500).json({ error: 'Server error while updating campus.' });
+  }
+});
+
+// "Delete" (Soft Delete/Deactivate) a Campus
+app.delete('/api/campuses/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  if (req.user.role !== 'super_admin') {
+    return res.status(403).json({ error: 'Only Super Admins can manage campuses.' });
+  }
+
+  try {
+    // Instead of completely dropping the table row (which would break relational data like student records), 
+    // we simply mark the campus as 'inactive'
+    const query = `
+      UPDATE campuses
+      SET status = 'inactive'
+      WHERE id = $1
+      RETURNING *
+    `;
+    const result = await pool.query(query, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Campus not found.' });
+    }
+
+    res.json({ message: 'Campus deactivated successfully.' });
+  } catch (err) {
+    console.error('Error deleting campus:', err);
+    res.status(500).json({ error: 'Server error while deleting campus.' });
+  }
+});
+
+
+// ==========================================
+// PUBLIC ROUTES (No Token Required)
+// ==========================================
+
+// Fetch active campuses for the registration dropdown
+app.get('/api/public/campuses', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT id, name FROM campuses WHERE status = 'active' ORDER BY name");
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching public campuses:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Submit a new registration request
+app.post('/api/registrations', async (req, res) => {
+  const { name, email, role, campus } = req.body;
+  
+  try {
+    // 1. Look up the campus UUID based on the string name
+    let campusId = null;
+    if (campus) {
+      const campusRes = await pool.query('SELECT id FROM campuses WHERE name = $1 LIMIT 1', [campus]);
+      if (campusRes.rows.length > 0) campusId = campusRes.rows[0].id;
+    }
+
+    // 2. Insert the pending request into the database
+    const query = `
+      INSERT INTO registration_requests (full_name, email, role, campus_id, status)
+      VALUES ($1, $2, $3, $4, 'pending') RETURNING *
+    `;
+    const result = await pool.query(query, [name, email, role, campusId]);
+    
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error creating registration request:', err);
+    res.status(500).json({ error: 'Server error while submitting request.' });
+  }
+});
+
 // --- SECURITY MIDDLEWARE ---
-// This function acts as the bouncer. It checks the digital badge before letting anyone in.
-const authenticateToken = (req, res, next) => {
+function authenticateToken(req, res, next) { 
   // Get the token from the request headers
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Format is "Bearer <token>"
@@ -120,29 +277,220 @@ const authenticateToken = (req, res, next) => {
 
 // --- SECURE ROUTES ---
 
-// GET STUDENTS (Filtered by Role & Campus)
+// ── SECURE FETCH STUDENTS ROUTE ───────────────────────────────────────
 app.get('/api/students', authenticateToken, async (req, res) => {
   try {
-    const { role, campus_id } = req.user;
-    
-    // Base query using your brilliant database view
-    let query = `SELECT * FROM vw_student_details WHERE status = 'active'`;
-    let params = [];
-
-    // If they are NOT a super admin, force the query to only search their campus
-    if (role !== 'super_admin') {
-      query += ` AND campus_id = $1`;
-      params.push(campus_id);
-    }
-
-    query += ` ORDER BY first_name ASC`;
-
-    const result = await pool.query(query, params);
+    // We explicitly select father_name and mother_name now
+    const query = `
+      SELECT 
+        s.*, 
+        c.name as campus_name, 
+        g.name as grade_name, 
+        sec.code as section_code
+      FROM students s
+      LEFT JOIN campuses c ON s.campus_id = c.id
+      LEFT JOIN grades g ON s.current_grade_id = g.id
+      LEFT JOIN sections sec ON s.current_section_id = sec.id
+      ORDER BY s.created_at DESC
+    `;
+    const result = await pool.query(query);
     res.json(result.rows);
-
   } catch (err) {
     console.error('Error fetching students:', err);
-    res.status(500).json({ error: 'Server error while fetching students' });
+    res.status(500).json({ error: 'Server error while fetching students.' });
+  }
+});
+
+
+// ==========================================
+// CAMPUS & AUDIT ROUTES
+// ==========================================
+
+app.get('/api/campuses', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM campuses WHERE status = 'active' ORDER BY name");
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error fetching campuses' }); }
+});
+
+app.get('/api/audit-logs', authenticateToken, async (req, res) => {
+  try {
+    const query = `SELECT a.id, a.action, a.timestamp, a.details->>'description' as details, u.full_name as user 
+                   FROM audit_logs a LEFT JOIN users u ON a.user_id = u.id ORDER BY a.timestamp DESC LIMIT 100`;
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/registrations/pending', authenticateToken, async (req, res) => {
+  try {
+    const query = `SELECT r.id, r.full_name as name, r.email, r.role, c.name as campus, r.request_date as "requestedAt", r.status
+                   FROM registration_requests r LEFT JOIN campuses c ON r.campus_id = c.id WHERE r.status = 'pending'`;
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// ==========================================
+// STAFF & EXAM ROUTES
+// ==========================================
+
+app.get('/api/staff', authenticateToken, async (req, res) => {
+  try {
+    // Return empty array if no campus is provided instead of failing
+    if (!req.query.campus || req.query.campus === 'No Campus Available') return res.json([]);
+    
+    const query = `SELECT st.*, c.name as campus_name FROM staff st 
+                   LEFT JOIN campuses c ON st.campus_id = c.id 
+                   WHERE c.name = $1`;
+    const result = await pool.query(query, [req.query.campus]);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error fetching staff' }); }
+});
+
+app.get('/api/exams', authenticateToken, async (req, res) => {
+  try {
+    if (!req.query.campus || req.query.campus === 'No Campus Available') return res.json([]);
+    
+    const query = `SELECT e.* FROM exams e 
+                   LEFT JOIN campuses c ON e.campus_id = c.id 
+                   WHERE c.name = $1`;
+    const result = await pool.query(query, [req.query.campus]);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error fetching exams' }); }
+});
+
+
+// ── SECURE ADD STUDENT ROUTE ──────────────────────────────────────────
+// ── SECURE ADD STUDENT ROUTE (WITH AUTO GR-NUMBER) ──────────────────────────
+// ADD NEW STUDENT
+app.post('/api/students', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    const {
+      fullName, admissionNumber, dateOfBirth, gender,
+      campus, grade, section, phone, fatherName, motherName, address,
+      previousSchool, testResult, admissionStatus
+    } = req.body;
+
+    // Start a transaction in case a lookup fails
+    await client.query('BEGIN');
+
+    // 1. DYNAMIC UUID TRANSLATIONS
+    // Translate "North Campus" -> UUID
+    const campusId = await getLookupId('campuses', 'name', campus);
+    
+    // Translate "Grade 3" -> UUID (Scoped to the specific campus)
+    const gradeId = await getLookupId('grades', 'name', grade, 'campus_id', campusId);
+    
+    // Translate "Section A" -> UUID (Scoped to the specific grade)
+    const sectionId = await getLookupId('sections', 'code', section, 'grade_id', gradeId);
+
+    // 2. INSERT THE STUDENT WITH PROPER UUIDs
+    const insertQuery = `
+      INSERT INTO students (
+        admission_number, full_name, date_of_birth, gender,
+        campus_id, current_grade_id, current_section_id,
+        guardian_phone, father_name, mother_name, address,
+        previous_school, test_result, admission_status, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      RETURNING id, full_name, admission_number;
+    `;
+    
+    const values = [
+      admissionNumber, fullName, dateOfBirth || null, gender,
+      campusId, gradeId, sectionId,
+      phone, fatherName, motherName, address,
+      previousSchool, testResult, admissionStatus, req.user.id
+    ];
+
+    const newStudent = await client.query(insertQuery, values);
+    
+    // Commit the transaction
+    await client.query('COMMIT');
+    
+    res.status(201).json(newStudent.rows[0]);
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error adding student:', error);
+    
+    // If our translation helper threw an error, send that specific message to the frontend
+    if (error.message.includes('Could not find')) {
+      return res.status(400).json({ error: error.message });
+    }
+    
+    // Handle Unique Constraint violations (like duplicate GR numbers)
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'A student with this GR Number already exists.' });
+    }
+    
+    res.status(500).json({ error: 'Internal Server Error while creating student.' });
+  } finally {
+    client.release();
+  }
+});
+
+// ── SECURE ADD GRADE & SECTION ROUTE ──────────────────────────────────
+app.post('/api/setup/grade', authenticateToken, async (req, res) => {
+  const { campusName, gradeName, sectionName } = req.body;
+  
+  // NEW: Allow UI to specify the section, otherwise default to Section A
+  const targetSection = sectionName || 'Section A';
+  const sectionCode = targetSection.replace('Section ', '').substring(0, 1).toUpperCase();
+
+  try {
+    const campusRes = await pool.query(`SELECT id FROM campuses WHERE name LIKE $1 LIMIT 1`, [`%${campusName}%`]);
+    const campusId = campusRes.rows[0]?.id;
+
+    if (!campusId) return res.status(400).json({ error: `Campus '${campusName}' not found in database.` });
+
+    const gradeCheck = await pool.query(`SELECT id FROM grades WHERE name = $1 AND campus_id = $2`, [gradeName, campusId]);
+    let gradeId;
+
+    if (gradeCheck.rows.length > 0) {
+        gradeId = gradeCheck.rows[0].id;
+    } else {
+        const gradeCode = gradeName.replace('Grade ', 'G'); 
+        const newGrade = await pool.query(`
+          INSERT INTO grades (id, campus_id, name, code, display_order, academic_year, status)
+          VALUES (gen_random_uuid(), $1, $2, $3, 99, '2025-2026', 'active')
+          RETURNING id
+        `, [campusId, gradeName, gradeCode]);
+        gradeId = newGrade.rows[0].id;
+    }
+
+    const sectionCheck = await pool.query(`SELECT id FROM sections WHERE name = $1 AND grade_id = $2`, [targetSection, gradeId]);
+    if (sectionCheck.rows.length === 0) {
+        await pool.query(`
+          INSERT INTO sections (id, grade_id, name, code, max_capacity, current_strength)
+          VALUES (gen_random_uuid(), $1, $2, $3, 40, 0)
+        `, [gradeId, targetSection, sectionCode]);
+    }
+
+    res.status(201).json({ message: `${gradeName} ${targetSection} successfully created for ${campusName}!` });
+  } catch (err) {
+    console.error('Error creating grade infrastructure:', err);
+    res.status(500).json({ error: 'Server error while building Grade.' });
+  }
+});
+
+// ── NEW: SECURE FETCH ALL EXISTING CLASSES ROUTE ─────────────────────────
+app.get('/api/classes', authenticateToken, async (req, res) => {
+  try {
+    const query = `
+      SELECT c.name as campus_name, g.name as grade_name, s.name as section_name
+      FROM grades g
+      JOIN sections s ON g.id = s.grade_id
+      JOIN campuses c ON g.campus_id = c.id
+      ORDER BY c.name, g.display_order, s.name
+    `;
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching classes:', err);
+    res.status(500).json({ error: 'Server error fetching classes.' });
   }
 });
 
@@ -155,21 +503,24 @@ app.get('/api/attendance/my-students', authenticateToken, async (req, res) => {
     let params = [];
 
     if (role === 'super_admin') {
-      query = `SELECT * FROM vw_student_details WHERE status = 'active' ORDER BY first_name ASC`;
+      // FIXED: ORDER BY full_name
+      query = `SELECT * FROM vw_student_details WHERE status = 'active' ORDER BY full_name ASC`;
     } 
     else if (role === 'campus_admin') {
-      query = `SELECT * FROM vw_student_details WHERE status = 'active' AND campus_id = $1 ORDER BY first_name ASC`;
+      // FIXED: ORDER BY full_name
+      query = `SELECT * FROM vw_student_details WHERE status = 'active' AND campus_id = $1 ORDER BY full_name ASC`;
       params.push(campus_id);
     } 
     else if (role === 'teacher') {
       // Magic Query: Get students if the user is their Class Teacher OR teaches one of their Courses
+      // FIXED: ORDER BY s.full_name
       query = `
         SELECT DISTINCT s.* FROM vw_student_details s
         LEFT JOIN sections sec ON s.current_section_id = sec.id
         LEFT JOIN courses c ON s.current_grade_id = c.grade_id
         WHERE (sec.class_teacher_id = $1 OR c.teacher_id = $1) 
         AND s.status = 'active'
-        ORDER BY s.first_name ASC
+        ORDER BY s.full_name ASC
       `;
       params.push(id);
     }

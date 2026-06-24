@@ -1,23 +1,41 @@
-import { useState } from 'react';
-import { UserPlus, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useRegistration } from './RegistrationContext.jsx';
+import { UserPlus, CheckCircle } from 'lucide-react';
 import { useToast } from './ui/toast.jsx';
 
-const ROLES = ['teacher', 'admin'];
-const CAMPUSES = ['North Campus', 'South Campus'];
+const ROLES = ['teacher', 'staff', 'campus_admin'];
 
-export function RegistrationScreen({ onBackToLogin }) {
+export function RegistrationScreen({ onNavigateBack }) {
   const { addRegistrationRequest } = useRegistration();
   const toast = useToast();
-
+  
+  // NEW: Dynamic Campuses State instead of a hardcoded array
+  const [availableCampuses, setAvailableCampuses] = useState([]);
+  
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    role: 'teacher',
-    campus: 'North Campus',
+    firstName: '', lastName: '', email: '', phone: '',
+    role: 'Teacher', department: '', campus: '',
+    experience: '', qualifications: '', whyJoin: ''
   });
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // NEW: Fetch campuses dynamically for the dropdown
+  useEffect(() => {
+    const fetchPublicCampuses = async () => {
+      try {
+        // Using a public endpoint so unauthenticated users can see the campus list
+        const res = await axios.get('http://localhost:5000/api/public/campuses').catch(() => ({ data: null }));
+        const liveData = res.data || [{ name: 'North Campus' }, { name: 'South Campus' }]; // Fallback
+        setAvailableCampuses(liveData.map(c => c.name));
+      } catch (error) {
+        console.error("Failed to load campuses");
+        setAvailableCampuses(['North Campus', 'South Campus']); // Fallback if API fails
+      }
+    };
+    fetchPublicCampuses();
+  }, []);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -52,7 +70,7 @@ export function RegistrationScreen({ onBackToLogin }) {
             You will be notified once your account is approved.
           </p>
           <button
-            onClick={onBackToLogin}
+            onClick={onNavigateBack}
             className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"
           >
             Back to Login
@@ -138,7 +156,7 @@ export function RegistrationScreen({ onBackToLogin }) {
               onChange={(e) => handleChange('campus', e.target.value)}
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-red-600 focus:outline-none text-sm"
             >
-              {CAMPUSES.map((c) => (
+              {availableCampuses.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
@@ -156,7 +174,7 @@ export function RegistrationScreen({ onBackToLogin }) {
         {/* Back to login */}
         <div className="mt-4 text-center">
           <button
-            onClick={onBackToLogin}
+            onClick={onNavigateBack}
             className="text-sm text-gray-500 hover:text-red-600 transition-colors"
           >
             ← Back to Login

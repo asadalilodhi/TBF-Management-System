@@ -103,49 +103,41 @@ CREATE TABLE sections (
 
 CREATE TABLE students (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    campus_id UUID REFERENCES campuses(id) ON DELETE CASCADE,
-    current_grade_id UUID REFERENCES grades(id),
-    current_section_id UUID REFERENCES sections(id),
     admission_number VARCHAR(50) UNIQUE NOT NULL,
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
-    date_of_birth DATE NOT NULL,
-    gender VARCHAR(20) CHECK (gender IN ('Male', 'Female', 'Other')),
+    full_name VARCHAR(255) NOT NULL,
+    date_of_birth DATE,
+    gender VARCHAR(20),
     blood_group VARCHAR(10),
-    photo_url TEXT,
+
+    -- Admission Pipeline
+    previous_school VARCHAR(255),
+    test_result VARCHAR(50),
+    interview_status VARCHAR(50),
+    admission_status VARCHAR(50) DEFAULT 'Confirmed',
+    admission_date DATE,
     
-    -- Contact Information
-    email VARCHAR(255),
-    phone VARCHAR(20),
-    address TEXT,
-    city VARCHAR(100),
-    state VARCHAR(100),
-    postal_code VARCHAR(20),
-    
-    -- Guardian Information
-    guardian_name VARCHAR(255),
-    guardian_relationship VARCHAR(50),
+    -- Parent/Guardian details
+    father_name VARCHAR(255),
+    mother_name VARCHAR(255),
     guardian_phone VARCHAR(20),
     guardian_email VARCHAR(255),
-    guardian_occupation VARCHAR(100),
     
     -- Emergency Contact
     emergency_contact_name VARCHAR(255),
     emergency_contact_phone VARCHAR(20),
     emergency_contact_relationship VARCHAR(50),
     
-    -- Academic Information
-    admission_date DATE NOT NULL,
-    previous_school VARCHAR(255),
-    previous_grade VARCHAR(50),
+    -- School Placement
+    campus_id UUID REFERENCES campuses(id),
+    current_grade_id UUID REFERENCES grades(id),
+    current_section_id UUID REFERENCES sections(id),
     
-    -- Status
-    status VARCHAR(50) DEFAULT 'active' CHECK (status IN ('active', 'transferred', 'graduated', 'withdrawn', 'suspended')),
-    
-    -- Metadata
+    -- Account Status
+    status VARCHAR(50) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'graduated', 'transferred')),
+    address TEXT,
+    created_by UUID REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID REFERENCES users(id)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Student enrollment history (for tracking grade transfers)
@@ -173,9 +165,9 @@ CREATE TABLE staff (
     campus_id UUID REFERENCES campuses(id) ON DELETE CASCADE,
     employee_id VARCHAR(50) UNIQUE NOT NULL,
     
-    -- Personal Information
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
+    -- Personal Information (FIXED: Single full_name to match CSV)
+    full_name VARCHAR(255) NOT NULL,
+    
     date_of_birth DATE,
     gender VARCHAR(20) CHECK (gender IN ('Male', 'Female', 'Other')),
     blood_group VARCHAR(10),
@@ -229,6 +221,7 @@ CREATE TABLE courses (
     description TEXT,
     teacher_id UUID REFERENCES users(id),
     credit_hours INTEGER,
+    max_marks INTEGER DEFAULT 100, -- NEW: Dynamic total marks for exams
     is_compulsory BOOLEAN DEFAULT true,
     display_order INTEGER,
     status VARCHAR(50) DEFAULT 'active' CHECK (status IN ('active', 'archived')),
@@ -279,22 +272,44 @@ CREATE TABLE syllabus_progress (
     UNIQUE(course_id, section_id, topic_id)
 );
 
+
+-- =====================================================
+-- STAFF ATTENDANCE
+-- =====================================================
+CREATE TABLE staff_attendance (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    staff_id UUID REFERENCES staff(id) ON DELETE CASCADE,
+    campus_id UUID REFERENCES campuses(id),
+    attendance_date DATE NOT NULL,
+    
+    -- Includes present, absent, leave, and late
+    status VARCHAR(20) NOT NULL CHECK (status IN ('present', 'absent', 'leave', 'late')),
+    
+    marked_by UUID REFERENCES users(id),
+    remarks TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(staff_id, attendance_date)
+);
+
+
 -- =====================================================
 -- ATTENDANCE
 -- =====================================================
 
 CREATE TABLE attendance (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    campus_id UUID REFERENCES campuses(id) ON DELETE CASCADE,
     student_id UUID REFERENCES students(id) ON DELETE CASCADE,
+    campus_id UUID REFERENCES campuses(id),
     grade_id UUID REFERENCES grades(id),
     section_id UUID REFERENCES sections(id),
     attendance_date DATE NOT NULL,
-    status VARCHAR(50) NOT NULL CHECK (status IN ('present', 'absent', 'late', 'excused', 'half_day')),
-    check_in_time TIME,
-    check_out_time TIME,
-    remarks TEXT,
+    
+    -- NEW: Added 'late' to the allowed database values!
+    status VARCHAR(20) NOT NULL CHECK (status IN ('present', 'absent', 'leave', 'late')),
+    
     marked_by UUID REFERENCES users(id),
+    remarks TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(student_id, attendance_date)
@@ -462,7 +477,7 @@ CREATE INDEX idx_students_grade ON students(current_grade_id);
 CREATE INDEX idx_students_section ON students(current_section_id);
 CREATE INDEX idx_students_admission ON students(admission_number);
 CREATE INDEX idx_students_status ON students(status);
-CREATE INDEX idx_students_name ON students(first_name, last_name);
+CREATE INDEX idx_students_name ON students(full_name);
 
 -- Attendance indexes
 CREATE INDEX idx_attendance_student ON attendance(student_id);
@@ -530,7 +545,6 @@ SELECT
     sec.name as section_name,
     c.name as campus_name,
     c.code as campus_code,
-    CONCAT(s.first_name, ' ', s.last_name) as full_name,
     EXTRACT(YEAR FROM AGE(s.date_of_birth)) as age
 FROM students s
 LEFT JOIN grades g ON s.current_grade_id = g.id
@@ -544,8 +558,7 @@ SELECT
     c.name as campus_name,
     c.code as campus_code,
     u.email as user_email,
-    u.role as user_role,
-    CONCAT(st.first_name, ' ', st.last_name) as full_name
+    u.role as user_role
 FROM staff st
 LEFT JOIN campuses c ON st.campus_id = c.id
 LEFT JOIN users u ON st.user_id = u.id;

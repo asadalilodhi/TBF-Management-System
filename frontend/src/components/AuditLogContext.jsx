@@ -1,41 +1,51 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
 
 const AuditLogContext = createContext(undefined);
 
-const initialLogs = [
-  { id: 'LOG001', action: 'Syllabus Updated', user: 'Ms. Sana Khan', timestamp: '2026-01-30 10:30 AM', details: 'Grade 3 Mathematics - 45%' },
-  { id: 'LOG002', action: 'Attendance Marked', user: 'Mr. Ahmed Raza', timestamp: '2026-01-30 09:15 AM', details: 'South Campus - Grade 2 Section A' },
-  { id: 'LOG003', action: 'Student Added', user: 'North Campus Manager', timestamp: '2026-01-29 02:45 PM', details: 'New enrollment - Hira Qamar (GR #524)' },
-  { id: 'LOG004', action: 'User Login', user: 'Admin User', timestamp: '2026-01-29 08:00 AM', details: 'System access granted' },
-  { id: 'LOG005', action: 'Exam Results Entered', user: 'Ms. Fatima Noor', timestamp: '2026-01-28 03:30 PM', details: 'South Campus - Grade 5 - Term 1 Final' },
-  { id: 'LOG006', action: 'Student Updated', user: 'Admin User', timestamp: '2026-01-28 11:20 AM', details: 'Updated scholarship status - Muhammad Ahmed Khan (50% scholarship)' },
-  { id: 'LOG007', action: 'Attendance Marked', user: 'Ms. Sana Khan', timestamp: '2026-01-27 09:00 AM', details: 'North Campus - Grade 3 Section A' },
-  { id: 'LOG008', action: 'User Role Modified', user: 'Admin User', timestamp: '2026-01-26 11:45 AM', details: 'Changed role for South Campus Manager to Admin' },
-  { id: 'LOG009', action: 'Fee Payment Received', user: 'North Campus Manager', timestamp: '2026-01-25 01:15 PM', details: 'GR #234 - Ayesha Malik - PKR 5,000' },
-  { id: 'LOG010', action: 'Staff Member Added', user: 'Admin User', timestamp: '2026-01-24 10:00 AM', details: 'New teacher - Ms. Zainab Ali (English Department)' },
-];
-
 export function AuditLogProvider({ children }) {
-  const [auditLogs, setAuditLogs] = useState(initialLogs);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const addAuditLog = (log) => {
-    const newLog = {
-      ...log,
-      id: `LOG${String(auditLogs.length + 1).padStart(3, '0')}`,
-      timestamp: new Date().toLocaleString('en-US', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      }),
-    };
-    setAuditLogs([newLog, ...auditLogs]);
+  // 1. Fetch real logs from Postgres
+  const fetchLogs = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('http://localhost:5000/api/audit-logs', {
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => ({ data: null }));
+
+      // Fallback dummy data
+      const liveData = (res.data && res.data.length > 0) ? res.data : [
+        { id: 'LOG001', action: 'System Initialized', user: 'Super Admin', timestamp: new Date().toLocaleString(), details: 'Application started in local mode.' }
+      ];
+      setAuditLogs(liveData);
+    } catch (error) {
+      console.error('Failed to fetch logs', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLogs();
+  }, []);
+
+  // 2. Post real logs to Postgres
+  const addAuditLog = async (logData) => {
+    try {
+      const token = localStorage.getItem('token');
+      // We don't await the fetch here so the UI doesn't freeze while logging in the background
+      axios.post('http://localhost:5000/api/audit-logs', logData, { headers: { Authorization: `Bearer ${token}` }}).then(() => {
+        fetchLogs(); 
+      });
+    } catch (error) {
+      console.error('Failed to save audit log');
+    }
   };
 
   return (
-    <AuditLogContext.Provider value={{ auditLogs, addAuditLog }}>
+    <AuditLogContext.Provider value={{ auditLogs, addAuditLog, isLoading }}>
       {children}
     </AuditLogContext.Provider>
   );
@@ -43,8 +53,6 @@ export function AuditLogProvider({ children }) {
 
 export function useAuditLog() {
   const context = useContext(AuditLogContext);
-  if (context === undefined) {
-    throw new Error('useAuditLog must be used within an AuditLogProvider');
-  }
+  if (context === undefined) throw new Error('useAuditLog must be used within an AuditLogProvider');
   return context;
 }
