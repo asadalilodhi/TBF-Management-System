@@ -45,6 +45,11 @@ export function StudentDirectory({ initialGradeFilter }) {
   const [filterClass, setFilterClass] = useState(initialGradeFilter || 'All');
   const [filterStatus, setFilterStatus] = useState('All');
   const [selectedStudent, setSelectedStudent] = useState(null);
+  
+  // New State for Transfer Feature
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferDestination, setTransferDestination] = useState('');
 
   useEffect(() => {
     if (initialGradeFilter) setFilterClass(initialGradeFilter);
@@ -238,6 +243,11 @@ export function StudentDirectory({ initialGradeFilter }) {
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan="7" className="px-4 py-10 text-center text-gray-500 italic">No students found matching your filters.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

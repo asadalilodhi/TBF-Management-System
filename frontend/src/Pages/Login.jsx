@@ -37,16 +37,43 @@ function Login({ onLogin, onRegister }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+    <div className="min-h-screen flex">
 
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-red-600 rounded-full mb-4">
-            <span className="text-white text-2xl font-bold">TBF</span>
+      {/* ── Left panel ─────────────────────────────────────────────── */}
+      <div className="hidden lg:flex lg:w-1/2 bg-red-600 flex-col justify-between p-12 relative overflow-hidden">
+        {/* Background decoration */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-red-500 rounded-full -translate-y-1/2 translate-x-1/2 opacity-50" />
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-red-700 rounded-full translate-y-1/2 -translate-x-1/4 opacity-50" />
+
+        <div className="relative z-10">
+          {/* Logo */}
+          <div className="flex items-center gap-4 mb-16">
+            <div className="w-14 h-14 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+              <GraduationCap className="size-8 text-white" />
+            </div>
+            <div>
+              <h1 className="text-white text-xl font-bold leading-tight">The Bridge Foundation</h1>
+              <p className="text-red-200 text-sm">School Management System</p>
+            </div>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">TBF Staff Portal</h1>
-          <p className="text-gray-500 text-sm mt-1">The Bridge Foundation Management System</p>
+
+          {/* Features */}
+          <div className="space-y-8">
+            {FEATURES.map((feature) => {
+              const Icon = feature.icon;
+              return (
+                <div key={feature.title} className="flex items-start gap-4">
+                  <div className="w-10 h-10 bg-white bg-opacity-20 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Icon className="size-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-semibold mb-1">{feature.title}</h3>
+                    <p className="text-red-100 text-sm leading-relaxed">{feature.description}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Form */}
@@ -63,17 +90,9 @@ function Login({ onLogin, onRegister }) {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-red-600 focus:outline-none text-sm"
-            />
-          </div>
+      {/* ── Right panel ────────────────────────────────────────────── */}
+      <div className="flex-1 flex items-center justify-center bg-white px-6 py-12">
+        <div className="w-full max-w-md">
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Campus</label>
@@ -93,7 +112,6 @@ function Login({ onLogin, onRegister }) {
             <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700 text-sm font-medium text-center">
               {status}
             </div>
-          )}
 
           <button
             type="submit"
@@ -115,12 +133,7 @@ function Login({ onLogin, onRegister }) {
           </button>
         </div>
 
-        {/* Demo credentials */}
-        <div className="mt-6 p-4 bg-gray-50 rounded-lg text-xs text-gray-500">
-          <p className="font-semibold text-gray-600 mb-2">Demo Credentials:</p>
-          <p>Super Admin: <span className="font-mono">admin / admin123</span></p>
-          <p>Teacher: <span className="font-mono">sana / teacher123</span></p>
-          <p>Admin: <span className="font-mono">northadmin / admin123</span></p>
+          </form>
         </div>
       </div>
     </div>
